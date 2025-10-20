@@ -163,10 +163,12 @@ server <- function(input, output, session) {
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
-      wellPanel(
-        h5("Candidates in this Election:"),
-        p(paste(config$candidates, collapse = ", "))
-      ),
+      
+      # <-- CHANGE: Display candidates in a non-boxed, bolded, new-line format
+      strong("Candidates in this Election:"),
+      p(HTML(paste(config$candidates, collapse = "<br>"))),
+      br(), # Add a little space
+      
       div(id = "processing_inputs",
           numericInput("process_seats", "Number of seats to elect", value = config$seats, min = 1),
           rank_list(
@@ -422,7 +424,7 @@ server <- function(input, output, session) {
     results <- tryCatch({
       capture.output(
         cpo_stv(ballot_df, seats = input$process_seats, 
-                ties = input$tiebreak_methods, seed = input$seed, verbose = TRUE)
+                ties = input$tiebreak_methods, seed = input$seed)
       )
     }, error = function(e) {
       paste("An error occurred during calculation:", e$message)
