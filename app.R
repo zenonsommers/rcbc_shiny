@@ -25,12 +25,13 @@ library(bslib)
 # Load the cpo_stv function
 source("cpo_stv.R")
 
-# Define default seed
+# --- Global Settings ---
 default_seed <- 38725
-
-# Set Bootswatch Themes
 light_bootswatch <- "flatly"
 dark_bootswatch <- "darkly"
+
+# Set to FALSE to disable custom styling for drag-and-drop elements
+enable_custom_sortable_style <- FALSE
 
 # -- App Setup -----------------------------------------------------------------
 
@@ -55,26 +56,47 @@ show_error_modal <- function(message) {
 theme <- bs_theme(version = 5, base_font = font_google("Inter"),
                   bootswatch = light_bootswatch)
 
-
 # -- UI Definition -------------------------------------------------------------
 
+# Base CSS rules
+css_rules <- "
+  body {
+    padding-top: 5px;
+  }
+  #darkModeToggle {
+    color: var(--bs-body-color);
+  }
+"
+
+# Conditionally add the sortable style if the flag is TRUE
+if (enable_custom_sortable_style) {
+  css_rules <- paste(css_rules, "
+    /* Target our custom-classed sortable items */
+    .custom-rank-list .rank-list-item {
+      background-color: var(--bs-tertiary-bg); /* Use a contrast color */
+      border: 1px solid var(--bs-border-color); /* Explicitly set border */
+      color: var(--bs-body-color); /* Use main text color */
+      
+      /* Add back structural styles */
+      padding: 6px 12px;
+      margin-bottom: 4px;
+      border-radius: var(--bs-border-radius);
+    }
+  ")
+}
+
+
 ui <- fluidPage(
-  theme = bs_theme_update(theme, bootswatch = light_bootswatch), # Start with light theme
+  theme = bs_theme_update(theme, bootswatch = light_bootswatch),
   useShinyjs(),
   
-  # Custom CSS for dark mode toggle visibility
-  tags$head(
-    tags$style(HTML("
-      #darkModeToggle {
-        color: var(--bs-body-color);
-      }
-    "))
-  ),
+  # Custom CSS for padding, dark mode toggle, and sortable items
+  tags$head(tags$style(HTML(css_rules))),
   
   # Dark mode toggle switch
   div(style = "position: absolute; top: 10px; right: 20px; z-index: 1000;",
       actionButton("darkModeToggle", "",
-                   icon = icon("sun"), # Start with sun, as light mode is default
+                   icon = icon("sun"), 
                    style = "border: none; background: transparent;")
   ),
   
@@ -278,7 +300,8 @@ server <- function(input, output, session) {
                 text = "Drag to order CPO-STV tie-break methods",
                 labels = c("Borda" = "borda", "Random" = "random",
                            "STV" = "stv"),
-                input_id = "tiebreak_methods_cpo"
+                input_id = "tiebreak_methods_cpo",
+                class = "custom-rank-list"
               )
           ),
           
@@ -287,7 +310,8 @@ server <- function(input, output, session) {
                 text = "Drag to order Borda tie-break methods",
                 labels = c("CPO STV" = "cpo_stv", "Random" = "random",
                            "STV" = "stv"),
-                input_id = "tiebreak_methods_borda_tb"
+                input_id = "tiebreak_methods_borda_tb",
+                class = "custom-rank-list"
               )
           ),
           
@@ -481,7 +505,8 @@ server <- function(input, output, session) {
         text = paste("Rank candidates by dragging them into order from",
                      "most preferred (top) to least preferred (bottom)."),
         labels = randomized_candidates,
-        input_id = "ranked_ballot_strict"
+        input_id = "ranked_ballot_strict",
+        class = "custom-rank-list"
       )
     } else {
       initial_ballot_order(NULL)
