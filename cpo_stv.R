@@ -288,15 +288,18 @@ transfer_surplus <- function(df, scores, transfer_eligible, quota,
 }
 
 borda <- function(df, seats = 3, ties = tie_methods, normalize = TRUE, 
-                  seed = default_seed, ...) {
+                  seed = default_seed, verbose = FALSE, debug = FALSE, ...) {
   # For running code manually to debug:
   # df <- read.csv("Cycle 4.csv") %>% select(2:9) %>% removeQuestion()
   # seats <- 3
   # ties <- c("random")
   # normalize <- TRUE
   
-  # Clean inputs #
-  seats <- min(seats, length(colnames(df)) - 1)
+  # Set up the function for verbose logging
+  report <- verbose_setup(verbose)
+  deport <- verbose_setup(debug)
+  
+  report("Beginning Borda tabulation")
   
   # Remove borda from tiebreak methods to be very sure we don't go recursive
   ties <- c(unlist(ties)) # Coerce to a vector in case it's a string
@@ -311,6 +314,15 @@ borda <- function(df, seats = 3, ties = tie_methods, normalize = TRUE,
     pivot_longer(everything(), names_to = "candidate", values_to = "score") %>%
     arrange(score)
   
+  if (seats > 0) {
+    # Clean inputs #
+    seats <- min(seats, length(colnames(df)) - 1)
+    report("Borda scores calculated. Returning ")
+  } else {
+    report("No number of seats specified. Returning Borda scores without breaking ties.")
+    return(scores)
+  }
+  
   # Check for a tie
   # Remember that Borda scores are like golf scores, lowest wins
   quota <- scores$score[seats]
@@ -318,9 +330,11 @@ borda <- function(df, seats = 3, ties = tie_methods, normalize = TRUE,
     filter(score <= quota)
   if (nrow(winners) == seats) {
     # No tie occurred, return winners
+    report(paste("Returning winners of Borda election:", winners$candidate))
     return(list(winner = winners$candidate))
   } else {
     # A tie occurred, break the tie
+    report("A tie occurred. Breaking tie...")
     guaranteed <- winners %>% 
       filter(score < quota) %>%
       pull(candidate)
@@ -335,6 +349,8 @@ borda <- function(df, seats = 3, ties = tie_methods, normalize = TRUE,
       ties = ties, 
       normalize = normalize, 
       seed = seed,
+      verbose = verbose,
+      debug = debug,
       ...
     )
     return(list(winner = winner))
@@ -422,6 +438,8 @@ cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE,
   # Get the candidate list
   candidates <- colnames(ballots)
   numcandidates <- length(candidates)
+  
+  report("Beginning CPO STV tabulation")
   
   report(paste("There are", numcandidates, "candidates:", 
                paste(unlist(candidates))))
@@ -664,20 +682,20 @@ cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE,
   }
 }
 
-#filenames <- c("Cycle 1.csv", "Cycle 2.csv", "Cycle 4.csv", "Cycle 5.csv",
-#               "Cycle 6.csv", "Cycle 7.csv", "Cycle 8.csv")
-#filepaths <- file.path("Sample Data", filenames)
-#
-#election_results <- sapply(1:length(filenames), function(file) {
-#  result <- filepaths[file] %>% 
-#    read.csv() %>% # Open the votes
-#    select(where(is_integer)) %>% # remove timestamp
-#    removeQuestion() %>% # reduce column names to unique IDs, i.e., book titles
-#   cpo_stv(verbose = FALSE) # actually run the vote to get the results
-#  print(paste("The result of the election from file", filenames[file], "is:"))
-#  print(result$winner)
-#  return(result)
-#})
+filenames <- c("Cycle 1.csv", "Cycle 2.csv", "Cycle 4.csv", "Cycle 5.csv",
+               "Cycle 6.csv", "Cycle 7.csv", "Cycle 8.csv")
+filepaths <- file.path("Sample Data", filenames)
+
+election_results <- sapply(1:length(filenames), function(file) {
+  result <- filepaths[file] %>% 
+    read.csv() %>% # Open the votes
+    select(where(is_integer)) %>% # remove timestamp
+    removeQuestion() %>% # reduce column names to unique IDs, i.e., book titles
+    cpo_stv(verbose = FALSE) # actually run the vote to get the results
+  print(paste("The result of the election from file", filenames[file], "is:"))
+  print(result$winner)
+  return(result)
+})
 
 
 # Notes:
