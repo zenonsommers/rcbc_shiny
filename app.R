@@ -47,6 +47,64 @@ show_error_modal <- function(message) {
 
 ui <- fluidPage(
   useShinyjs(), # Initialize shinyjs
+  
+  # CSS for Dark Mode
+  tags$head(
+    tags$style(HTML("
+      /* Light Mode Variables */
+      :root {
+        --bg-color: #ffffff;
+        --text-color: #333333;
+        --well-bg: #f5f5f5;
+        --input-bg: #ffffff;
+        --input-border: #cccccc;
+      }
+
+      /* Dark Mode Class */
+      .dark-mode {
+        --bg-color: #2c3e50;
+        --text-color: #ecf0f1;
+        --well-bg: #34495e;
+        --input-bg: #5d6d7e;
+        --input-border: #7f8c8d;
+      }
+
+      /* Applying styles */
+      body {
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        transition: background-color 0.3s, color 0.3s;
+      }
+      .well {
+        background-color: var(--well-bg);
+        border-color: var(--input-border);
+      }
+      h1, h2, h3, h4, h5, h6 {
+        color: var(--text-color);
+      }
+      .form-control, .selectize-input, .selectize-dropdown {
+        background-color: var(--input-bg) !important;
+        color: var(--text-color) !important;
+        border-color: var(--input-border) !important;
+      }
+      .shiny-input-container {
+        color: var(--text-color);
+      }
+      #text_results {
+        background-color: var(--input-bg);
+        border: 1px solid var(--input-border);
+        color: var(--text-color);
+      }
+    "))
+  ),
+  
+  # Dark mode toggle switch
+  div(style = "position: absolute; top: 10px; right: 20px; z-index: 1000;",
+      actionButton("darkModeToggle", "",
+                   icon = icon("moon"),
+                   style = "border: none; background: transparent;")
+  ),
+  
   titlePanel("🗳️ RCBC Shiny Election Suite"),
   
   # The main UI will be dynamically rendered here based on user choices
@@ -64,6 +122,7 @@ server <- function(input, output, session) {
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
   initial_ballot_order <- reactiveVal(NULL)
+  is_dark_mode <- reactiveVal(FALSE)
   
   # Page managers for multi-step processes
   creation_page <- reactiveVal(1)
@@ -74,6 +133,20 @@ server <- function(input, output, session) {
   
   # To store the last chosen function from the hub
   last_function_choice <- reactiveVal("create")
+  
+  # -- Dark Mode Logic ---------------------------------------------------------
+  
+  observeEvent(input$darkModeToggle, {
+    shinyjs::toggleClass(selector = "body", class = "dark-mode")
+    is_dark_mode(!is_dark_mode()) # Toggle the state
+    
+    # Update the icon based on the mode
+    if (is_dark_mode()) {
+      updateActionButton(session, "darkModeToggle", icon = icon("sun"))
+    } else {
+      updateActionButton(session, "darkModeToggle", icon = icon("moon"))
+    }
+  })
   
   # -- Dynamic UI Rendering ----------------------------------------------------
   
@@ -98,14 +171,15 @@ server <- function(input, output, session) {
         fluidRow(
           column(8,
                  textInput("election_id", "Election ID",
-                           placeholder = "e.g., city-council-2025")
+                           placeholder = paste0("e.g., city-council-",
+                                                format(Sys.Date(), "%Y")))
           ),
           column(4, style = "margin-top: 25px;",
                  actionButton("generate_id", "Generate New ID",
                               icon = icon("wand-magic-sparkles"))
           )
         ),
-        radioButtons("app_function", "Choose Function:",
+        radioButtons("app_function", "What would you like to do?",
                      choices = c("Create a new election" = "create",
                                  "Submit a ballot" = "ballot",
                                  "Process election results" = "process"),
@@ -424,7 +498,8 @@ server <- function(input, output, session) {
     if (!config$allow_incomplete && !config$allow_ties) {
       initial_ballot_order(randomized_candidates)
       rank_list(
-        text = "Rank candidates by dragging them into order (Top = 1st).",
+        text = paste("Rank candidates by dragging them into order from",
+                     "most preferred (top) to least preferred (bottom)."),
         labels = randomized_candidates,
         input_id = "ranked_ballot_strict"
       )
@@ -559,8 +634,10 @@ server <- function(input, output, session) {
           borda(ballot_df, seats = 0, seed = input$seed,
                 verbose = verbose_flag)
         } else { # Standard stv
-          stv(ballot_df, nseats = input$process_seats, seed = input$seed,
-              verbose = verbose_flag)
+          config <- election_config()
+          stv(ballot_df, nseats = input$process_seats,
+              seed = input$seed, verbose = verbose_flag,
+              equal.ranking = config$allow_ties)
         }
       })
     }, error = function(e) {
