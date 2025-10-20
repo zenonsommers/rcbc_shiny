@@ -3,10 +3,11 @@
 #
 # To Run:
 # 1. Install packages:
-#    install.packages(c("shiny", "shinyjs", "uuid", "jsonlite", "sortable", 
+#    install.packages(c("shiny", "shinyjs", "uuid", "jsonlite", "sortable",
 #    "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools"))
 # 2. Save this entire script as 'app.R'.
-# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you saved the file.
+# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
+#    saved the file.
 # ==============================================================================
 
 # Load necessary libraries
@@ -45,7 +46,7 @@ show_error_modal <- function(message) {
 
 ui <- fluidPage(
   useShinyjs(), # Initialize shinyjs
-  titlePanel("🗳️ Shiny Election Suite"),
+  titlePanel("🗳️ RCBC Shiny Election Suite"),
   
   # The main UI will be dynamically rendered here based on user choices
   uiOutput("main_ui")
@@ -61,10 +62,14 @@ server <- function(input, output, session) {
   active_election_id <- reactiveVal(NULL)
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
-  initial_ballot_order <- reactiveVal(NULL) 
+  initial_ballot_order <- reactiveVal(NULL)
   
-  # To manage the two pages of the creation UI
-  creation_page <- reactiveVal(1) 
+  # Page managers for multi-step processes
+  creation_page <- reactiveVal(1)
+  processing_page <- reactiveVal(1)
+  
+  # To store the chosen tabulation method
+  tabulation_method <- reactiveVal("cpo_stv")
   
   # -- Dynamic UI Rendering ----------------------------------------------------
   
@@ -88,10 +93,12 @@ server <- function(input, output, session) {
       wellPanel(
         fluidRow(
           column(8,
-                 textInput("election_id", "Election ID", placeholder = "e.g., city-council-2025")
+                 textInput("election_id", "Election ID",
+                           placeholder = "e.g., city-council-2025")
           ),
           column(4, style = "margin-top: 25px;",
-                 actionButton("generate_id", "Generate New ID", icon = icon("wand-magic-sparkles"))
+                 actionButton("generate_id", "Generate New ID",
+                              icon = icon("wand-magic-sparkles"))
           )
         ),
         radioButtons("app_function", "Choose Function:",
@@ -100,46 +107,51 @@ server <- function(input, output, session) {
                                  "Process election results" = "process"),
                      selected = "create"),
         br(),
-        actionButton("go_to_function", "Continue →", class = "btn-primary btn-lg", icon = icon("arrow-right"))
+        actionButton("go_to_function", "Continue →",
+                     class = "btn-primary btn-lg", icon = icon("arrow-right"))
       )
     )
   }
   
-  # Main router for the two-page creation UI
   create_ui <- function() {
-    if (creation_page() == 1) {
-      create_page_1_ui()
-    } else {
-      create_page_2_ui()
-    }
+    if (creation_page() == 1) create_page_1_ui() else create_page_2_ui()
   }
   
-  # UI for Page 1 of Election Creation (File Upload)
   create_page_1_ui <- function() {
     fluidPage(
       h3(paste("Creating New Election:", active_election_id())),
-      p("You can pre-fill this election by uploading a CSV of ranked ballots, typically from a Google Form."),
+      p(
+        "You can pre-fill this election by uploading a CSV of ranked ballots,",
+        "typically from a Google Form."
+      ),
       hr(),
       fileInput("ballot_file", "Optional: Upload CSV to Pre-fill Ballots",
-                accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
-      actionButton("to_create_page_2", "Continue to Details", class = "btn-primary")
+                accept = c("text/csv",
+                           "text/comma-separated-values,text/plain", ".csv")),
+      actionButton("to_create_page_2", "Continue to Details",
+                   class = "btn-primary")
     )
   }
   
-  # UI for Page 2 of Election Creation (Main Form)
   create_page_2_ui <- function() {
     fluidPage(
       h3(paste("Creating New Election:", active_election_id())),
       p("Define the parameters for your new election."),
       hr(),
-      textInput("election_title", "Election Title", placeholder = "e.g., Annual Board Election"),
-      textAreaInput("candidate_names", "Candidate Names (one per line)", rows = 5),
-      numericInput("seats", "Number of Seats to Elect", value = 3, min = 1, step = 1),
-      checkboxInput("allow_incomplete", "Allow incomplete ballots (voters can leave candidates unranked)", value = FALSE),
-      checkboxInput("allow_ties", "Allow tied ranks (voters can give the same rank to multiple candidates)", value = FALSE),
+      textInput("election_title", "Election Title",
+                placeholder = "e.g., Annual Board Election"),
+      textAreaInput("candidate_names", "Candidate Names (one per line)",
+                    rows = 5),
+      numericInput("seats", "Number of Seats to Elect", value = 3, min = 1,
+                   step = 1),
+      checkboxInput("allow_incomplete",
+                    "Allow incomplete ballots",
+                    value = FALSE),
+      checkboxInput("allow_ties", "Allow tied ranks", value = FALSE),
       passwordInput("password", "Optional: Set an Admin Password"),
       hr(),
-      actionButton("submit_creation", "Create Election", class = "btn-success", icon = icon("check"))
+      actionButton("submit_creation", "Create Election",
+                   class = "btn-success", icon = icon("check"))
     )
   }
   
@@ -152,32 +164,61 @@ server <- function(input, output, session) {
       hr(),
       uiOutput("ballot_interface"),
       hr(),
-      actionButton("submit_ballot", "Submit Ballot", class = "btn-success", icon = icon("person-booth"))
+      actionButton("submit_ballot", "Submit Ballot",
+                   class = "btn-success", icon = icon("person-booth"))
     )
   }
   
   process_ui <- function() {
+    if (processing_page() == 1) process_page_1_ui() else process_page_2_ui()
+  }
+  
+  process_page_1_ui <- function() {
     req(election_config())
     config <- election_config()
     fluidPage(
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
-      
-      # <-- CHANGE: Display candidates in a non-boxed, bolded, new-line format
       strong("Candidates in this Election:"),
       p(HTML(paste(config$candidates, collapse = "<br>"))),
-      br(), # Add a little space
-      
+      hr(),
+      radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
+                   choices = c("CPO STV" = "cpo_stv",
+                               "Standard STV" = "stv"),
+                   selected = "cpo_stv"),
+      actionButton("to_process_page_2", "Continue", class = "btn-primary")
+    )
+  }
+  
+  process_page_2_ui <- function() {
+    req(election_config())
+    config <- election_config()
+    fluidPage(
+      h3(paste("Processing Results for:", config$title)),
+      p(paste("Election ID:", config$unique_identifier)),
+      p(paste("Tabulation method:", tabulation_method())),
+      hr(),
+      strong("Candidates in this Election:"),
+      p(HTML(paste(config$candidates, collapse = "<br>"))),
+      br(),
       div(id = "processing_inputs",
-          numericInput("process_seats", "Number of seats to elect", value = config$seats, min = 1),
-          rank_list(
-            text = "Drag to order tie-break methods (Top = First)",
-            labels = c("Borda" = "borda", "Random" = "random", "STV" = "stv"),
-            input_id = "tiebreak_methods"
+          numericInput("process_seats", "Number of seats to elect",
+                       value = config$seats, min = 1),
+          
+          div(id = "tiebreak_options",
+              rank_list(
+                text = "Drag to order tie-break methods (Top = First)",
+                labels = c("Borda" = "borda", "Random" = "random",
+                           "STV" = "stv"),
+                input_id = "tiebreak_methods"
+              )
           ),
-          numericInput("seed", "Random Seed for Tie-Breaking", value = default_seed),
-          actionButton("submit_processing", "Process Results", class = "btn-info", icon = icon("calculator"))
+          
+          numericInput("seed", "Random Seed for Tie-Breaking",
+                       value = default_seed),
+          actionButton("submit_processing", "Process Results",
+                       class = "btn-info", icon = icon("calculator"))
       ),
       hr(),
       h4("Results:"),
@@ -186,7 +227,8 @@ server <- function(input, output, session) {
       shinyjs::hidden(
         div(id = "post_processing_ui",
             br(),
-            actionButton("return_home_from_results", "Return to Home", class = "btn-primary", icon = icon("home"))
+            actionButton("return_home_from_results", "Return to Home",
+                         class = "btn-primary", icon = icon("home"))
         )
       )
     )
@@ -198,7 +240,8 @@ server <- function(input, output, session) {
       hr(),
       p(end_screen_message()),
       br(),
-      actionButton("return_home", "Return to Home", class = "btn-primary", icon = icon("home"))
+      actionButton("return_home", "Return to Home", class = "btn-primary",
+                   icon = icon("home"))
     )
   }
   
@@ -206,17 +249,40 @@ server <- function(input, output, session) {
   
   observeEvent(input$generate_id, {
     election_count <- length(list.dirs(path = "Elections", recursive = FALSE))
-    adjectives <- c("brave", "bright", "calm", "clever", "cool", "eager", "epic", "fast", "fierce", "fine", "bold", "good", "grand", "great", "happy", "jolly", "jovial", "keen", "kind", "lively", "lucky", "magic", "merry", "neat", "noble", "plucky", "proud", "quirky", "rapid", "regal", "sharp", "shiny", "silent", "silly", "sleek", "slick", "smart", "smooth", "snappy", "spunky", "stark", "stellar", "sturdy", "super", "swift", "true", "vital", "vivid", "witty", "zany")
-    colors <- c("red", "green", "blue", "yellow", "orange", "purple", "pink", "brown", "cyan", "magenta", "teal", "lime", "maroon", "navy", "silver", "olive", "aquamarine", "coral", "indigo", "violet")
-    animals <- c("lion", "tiger", "bear", "wolf", "fox", "eagle", "shark", "zebra", "rhino", "hippo", "monkey", "giraffe", "elephant", "dolphin", "whale", "penguin", "koala", "kangaroo", "panda", "leopard", "cheetah", "panther", "jaguar", "crocodile", "alligator", "snake", "lizard", "gorilla", "chimpanzee", "horse", "goat", "octopus", "squid", "starfish", "peacock", "ostrich", "swan", "owl", "camel", "badger", "hyena", "warthog", "meerkat", "lemur", "sloth", "armadillo", "beaver", "otter", "raccoon", "skunk", "porcupine", "hedgehog", "bat", "bison", "buffalo", "moose", "elk", "deer", "coyote", "falcon", "hawk", "vulture", "parrot", "toucan", "hummingbird", "woodpecker", "pelican", "seagull", "albatross", "crab", "lobster", "walrus", "seal", "jellyfish")
+    adjectives <- c("brave", "bright", "calm", "clever", "cool", "eager",
+                    "epic", "fast", "fierce", "fine", "bold", "good", "grand",
+                    "great", "happy", "jolly", "jovial", "keen", "kind",
+                    "lively", "lucky", "magic", "merry", "neat", "noble",
+                    "plucky", "proud", "quirky", "rapid", "regal", "sharp",
+                    "shiny", "silent", "silly", "sleek", "slick", "smart",
+                    "smooth", "snappy", "spunky", "stark", "stellar", "sturdy",
+                    "super", "swift", "true", "vital", "vivid", "witty", "zany")
+    colors <- c("red", "green", "blue", "yellow", "orange", "purple", "pink",
+                "brown", "cyan", "magenta", "teal", "lime", "maroon", "navy",
+                "silver", "olive", "aquamarine", "coral", "indigo", "violet")
+    animals <- c(
+      "lion", "tiger", "bear", "wolf", "fox", "eagle", "shark", "zebra",
+      "rhino", "hippo", "monkey", "giraffe", "elephant", "dolphin", "whale",
+      "penguin", "koala", "kangaroo", "panda", "leopard", "cheetah",
+      "panther", "jaguar", "crocodile", "alligator", "snake", "lizard",
+      "gorilla", "chimpanzee", "horse", "goat", "octopus", "squid",
+      "starfish", "peacock", "ostrich", "swan", "owl", "camel", "badger",
+      "hyena", "warthog", "meerkat", "lemur", "sloth", "armadillo", "beaver",
+      "otter", "raccoon", "skunk", "porcupine", "hedgehog", "bat", "bison",
+      "buffalo", "moose", "elk", "deer", "coyote", "falcon", "hawk",
+      "vulture", "parrot", "toucan", "hummingbird", "woodpecker", "pelican",
+      "seagull", "albatross", "crab", "lobster", "walrus", "seal",
+      "jellyfish")
     
-    new_id <- NULL
-    is_unique <- FALSE
+    new_id <- NULL; is_unique <- FALSE
     while (!is_unique) {
       if (election_count <= 10000) {
-        new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1))
+        new_id <- paste(sample(adjectives, 1), sample(colors, 1),
+                        sample(animals, 1), sep = "-")
       } else {
-        new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1), "-", floor(runif(1, 1000, 9999)))
+        new_id <- paste(sample(adjectives, 1), sample(colors, 1),
+                        sample(animals, 1), floor(runif(1, 1000, 9999)),
+                        sep = "-")
       }
       if (!dir.exists(file.path("Elections", tolower(new_id)))) {
         is_unique <- TRUE
@@ -227,7 +293,6 @@ server <- function(input, output, session) {
   
   observeEvent(input$go_to_function, {
     id <- tolower(trimws(input$election_id))
-    
     if (id == "") {
       showModal(show_error_modal("Election ID cannot be empty."))
       return()
@@ -236,14 +301,18 @@ server <- function(input, output, session) {
     config_path <- file.path(election_path, "config.json")
     if (input$app_function == "create") {
       if (dir.exists(election_path)) {
-        showModal(show_error_modal("An election with this ID already exists. Please choose a different ID."))
+        showModal(show_error_modal(
+          "An election with this ID already exists. Please choose another."
+        ))
       } else {
         active_election_id(id)
         current_ui("create")
       }
     } else {
       if (!dir.exists(election_path) || !file.exists(config_path)) {
-        showModal(show_error_modal("No election found with this ID. Please check the ID or create a new election."))
+        showModal(show_error_modal(
+          "No election found with this ID. Please check or create a new one."
+        ))
       } else {
         config <- fromJSON(config_path)
         election_config(config)
@@ -253,71 +322,67 @@ server <- function(input, output, session) {
     }
   })
   
+  # -- Create Election Logic & Page Flow ---------------------------------------
+  
   observeEvent(input$to_create_page_2, {
     candidate_names_from_csv <- ""
-    
     if (!is.null(input$ballot_file)) {
       ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-      
-      processed_df <- ballot_df %>%
-        select(where(is.numeric)) %>%
+      processed_df <- ballot_df %>% select(where(is.numeric)) %>%
         removeQuestion()
-      
       candidates <- colnames(processed_df)
       candidate_names_from_csv <- paste(candidates, collapse = "\n")
     }
-    
     creation_page(2)
-    
     shinyjs::delay(1, {
       updateTextInput(session, "election_title", value = active_election_id())
       if (candidate_names_from_csv != "") {
-        updateTextAreaInput(session, "candidate_names", value = candidate_names_from_csv)
+        updateTextAreaInput(session, "candidate_names",
+                            value = candidate_names_from_csv)
       }
     })
   })
   
-  # -- Create Election Logic ---------------------------------------------------
-  
   observeEvent(input$submit_creation, {
     candidates <- trimws(unlist(strsplit(input$candidate_names, "\n")))
     candidates <- candidates[candidates != ""]
-    
     if (length(candidates) < 3) {
       showModal(show_error_modal("Please specify at least three candidates."))
       return()
     }
     if (input$seats >= length(candidates)) {
-      showModal(show_error_modal("The number of seats must be less than the number of candidates."))
+      showModal(show_error_modal(
+        "The number of seats must be less than the number of candidates."
+      ))
       return()
     }
-    
     election_path <- file.path("Elections", active_election_id())
     dir.create(election_path)
-    
     config <- list(
       unique_identifier = active_election_id(),
-      title = input$election_title,
-      candidates = candidates,
-      seats = input$seats,
-      allow_incomplete = input$allow_incomplete,
+      title = input$election_title, candidates = candidates,
+      seats = input$seats, allow_incomplete = input$allow_incomplete,
       allow_ties = input$allow_ties,
-      password_hash = if (input$password != "") digest::digest(input$password, "sha256") else NULL
+      password_hash = if (input$password != "") {
+        digest::digest(input$password, "sha256")
+      } else { NULL }
     )
-    write_json(config, file.path(election_path, "config.json"), auto_unbox = TRUE)
-    
+    write_json(config, file.path(election_path, "config.json"),
+               auto_unbox = TRUE)
     if (!is.null(input$ballot_file)) {
       ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-      processed_df <- ballot_df %>% select(where(is.numeric)) %>% removeQuestion()
-      
+      processed_df <- ballot_df %>% select(where(is.numeric)) %>%
+        removeQuestion()
       for (i in 1:nrow(processed_df)) {
         ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
         ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
-        write_json(ballot_data, file.path(election_path, ballot_filename), auto_unbox = TRUE)
+        write_json(ballot_data,
+                   file.path(election_path, ballot_filename),
+                   auto_unbox = TRUE)
       }
     }
-    
-    end_screen_message(paste("Successfully created the election:", input$election_title))
+    end_screen_message(paste("Successfully created election:",
+                             input$election_title))
     current_ui("end")
   })
   
@@ -326,11 +391,10 @@ server <- function(input, output, session) {
   output$ballot_interface <- renderUI({
     config <- election_config()
     randomized_candidates <- sample(config$candidates)
-    
-    if (!config$allow_incomplete && !config$allow_ties) {
+    if (!config$allow_incomplete && !config.allow_ties) {
       initial_ballot_order(randomized_candidates)
       rank_list(
-        text = "Rank candidates by dragging them into your preferred order (Top = 1st choice).",
+        text = "Rank candidates by dragging them into order (Top = 1st).",
         labels = randomized_candidates,
         input_id = "ranked_ballot_strict"
       )
@@ -341,10 +405,8 @@ server <- function(input, output, session) {
       lapply(randomized_candidates, function(cand) {
         sanitized_name <- gsub("\\s+|[^A-Za-z0-9]", "_", cand)
         selectInput(
-          inputId = paste0("rank_", sanitized_name),
-          label = cand,
-          choices = c("Unranked" = 0, ranks),
-          selected = 0
+          inputId = paste0("rank_", sanitized_name), label = cand,
+          choices = c("Unranked" = 0, ranks), selected = 0
         )
       })
     }
@@ -362,36 +424,39 @@ server <- function(input, output, session) {
       })
     }
     if (!config$allow_incomplete && any(ranks == 0 | is.na(ranks))) {
-      showModal(show_error_modal("This election does not allow incomplete ballots. Please rank all candidates."))
+      showModal(show_error_modal("Please rank all candidates."))
       return()
     }
     if (!config$allow_ties) {
       ranked_positions <- ranks[ranks > 0 & !is.na(ranks)]
       if (any(duplicated(ranked_positions))) {
-        showModal(show_error_modal("This election does not allow tied ranks. Please assign a unique rank to each candidate."))
+        showModal(show_error_modal("Please assign a unique rank per candidate."))
         return()
       }
     }
     ballot_data <- setNames(as.list(ranks), config$candidates)
     ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
     election_path <- file.path("Elections", active_election_id())
-    write_json(ballot_data, file.path(election_path, ballot_filename), auto_unbox = TRUE)
-    end_screen_message("Your ballot has been successfully submitted. Thank you for voting!")
+    write_json(ballot_data, file.path(election_path, ballot_filename),
+               auto_unbox = TRUE)
+    end_screen_message("Your ballot has been successfully submitted.")
     current_ui("end")
   }
   
   observeEvent(input$submit_ballot, {
     config <- election_config()
     if (!config$allow_incomplete && !config$allow_ties) {
-      is_unchanged <- identical(initial_ballot_order(), input$ranked_ballot_strict)
+      is_unchanged <- identical(initial_ballot_order(),
+                                input$ranked_ballot_strict)
       if (is_unchanged) {
         showModal(modalDialog(
           title = "Confirm Submission",
-          "You have not changed the order of the candidates. Are you sure you want to submit this ballot as-is?",
+          "You have not reordered the candidates. Submit as-is?",
           easyClose = TRUE,
           footer = tagList(
             modalButton("Cancel"),
-            actionButton("confirm_submit", "Yes, Submit", class = "btn-primary")
+            actionButton("confirm_submit", "Yes, Submit",
+                         class = "btn-primary")
           )
         ))
         return()
@@ -405,13 +470,25 @@ server <- function(input, output, session) {
     process_and_save_ballot()
   })
   
-  # -- Process Results Logic ---------------------------------------------------
+  # -- Process Results Logic & Page Flow ---------------------------------------
+  
+  observeEvent(input$to_process_page_2, {
+    tabulation_method(input$tabulation_method_choice)
+    processing_page(2)
+    shinyjs::delay(1, {
+      shinyjs::toggle(id = "tiebreak_options",
+                      condition = input$tabulation_method_choice == "cpo_stv")
+    })
+  })
   
   observeEvent(input$submit_processing, {
     election_path <- file.path("Elections", active_election_id())
-    ballot_files <- list.files(election_path, pattern = "ballot_.*\\.json", full.names = TRUE)
+    ballot_files <- list.files(election_path,
+                               pattern = "ballot_.*\\.json", full.names = TRUE)
     if (length(ballot_files) == 0) {
-      output$stv_results <- renderPrint({ "No ballots have been submitted for this election." })
+      output$stv_results <- renderPrint({
+        "No ballots have been submitted for this election."
+      })
       return()
     }
     all_ballots <- lapply(ballot_files, function(f) {
@@ -423,8 +500,13 @@ server <- function(input, output, session) {
     
     results <- tryCatch({
       capture.output(
-        cpo_stv(ballot_df, seats = input$process_seats, 
-                ties = input$tiebreak_methods, seed = input$seed)
+        if (tabulation_method() == "cpo_stv") {
+          cpo_stv(ballot_df, seats = input$process_seats,
+                  ties = input$tiebreak_methods, seed = input$seed)
+        } else { # Standard stv
+          stv(ballot_df, nseats = input$process_seats, seed = input$seed,
+              tie_break = "random")
+        }
       )
     }, error = function(e) {
       paste("An error occurred during calculation:", e$message)
@@ -433,36 +515,26 @@ server <- function(input, output, session) {
     output$stv_results <- renderPrint({
       cat(paste(results, collapse = "\n"))
     })
-    
     shinyjs::hide("processing_inputs")
     shinyjs::show("post_processing_ui")
   })
   
   # -- End Screen/Return Home Logic -------------------------------------------
   
-  # Observer for the button on the results page
-  observeEvent(input$return_home_from_results, {
+  reset_to_hub <- function() {
     active_election_id(NULL)
     election_config(NULL)
     end_screen_message("")
     shinyjs::reset("election_id")
     shinyjs::show("processing_inputs")
     output$stv_results <- renderText({ "" })
-    creation_page(1) # Reset the creation flow
+    creation_page(1)
+    processing_page(1)
     current_ui("hub")
-  })
+  }
   
-  # Observer for the button on the "Action Complete" page
-  observeEvent(input$return_home, {
-    active_election_id(NULL)
-    election_config(NULL)
-    end_screen_message("")
-    shinyjs::reset("election_id")
-    shinyjs::show("processing_inputs")
-    output$stv_results <- renderText({ "" })
-    creation_page(1) # Reset the creation flow
-    current_ui("hub")
-  })
+  observeEvent(input$return_home_from_results, { reset_to_hub() })
+  observeEvent(input$return_home, { reset_to_hub() })
   
 }
 
