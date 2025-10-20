@@ -212,7 +212,6 @@ server <- function(input, output, session) {
       } else {
         new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1), "-", floor(runif(1, 1000, 9999)))
       }
-      # <-- CHANGE: Check the lowercase version of the ID
       if (!dir.exists(file.path("Elections", tolower(new_id)))) {
         is_unique <- TRUE
       }
@@ -221,7 +220,6 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$go_to_function, {
-    # <-- CHANGE: Convert the ID to lowercase immediately
     id <- tolower(trimws(input$election_id))
     
     if (id == "") {
@@ -436,7 +434,20 @@ server <- function(input, output, session) {
   
   # -- End Screen/Return Home Logic -------------------------------------------
   
+  # Observer for the button on the results page
   observeEvent(input$return_home_from_results, {
+    active_election_id(NULL)
+    election_config(NULL)
+    end_screen_message("")
+    shinyjs::reset("election_id")
+    shinyjs::show("processing_inputs")
+    output$stv_results <- renderText({ "" })
+    creation_page(1) # Reset the creation flow
+    current_ui("hub")
+  })
+  
+  # <-- CHANGE: Add a new observer for the button on the "Action Complete" page
+  observeEvent(input$return_home, {
     active_election_id(NULL)
     election_config(NULL)
     end_screen_message("")
@@ -451,3 +462,4 @@ server <- function(input, output, session) {
 
 # Run the application
 shinyApp(ui = ui, server = server)
+
