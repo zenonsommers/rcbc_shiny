@@ -163,6 +163,10 @@ server <- function(input, output, session) {
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
+      wellPanel(
+        h5("Candidates in this Election:"),
+        p(paste(config$candidates, collapse = ", "))
+      ),
       div(id = "processing_inputs",
           numericInput("process_seats", "Number of seats to elect", value = config$seats, min = 1),
           rank_list(
@@ -418,7 +422,7 @@ server <- function(input, output, session) {
     results <- tryCatch({
       capture.output(
         cpo_stv(ballot_df, seats = input$process_seats, 
-                ties = input$tiebreak_methods, seed = input$seed)
+                ties = input$tiebreak_methods, seed = input$seed, verbose = TRUE)
       )
     }, error = function(e) {
       paste("An error occurred during calculation:", e$message)
@@ -446,7 +450,7 @@ server <- function(input, output, session) {
     current_ui("hub")
   })
   
-  # <-- CHANGE: Add a new observer for the button on the "Action Complete" page
+  # Observer for the button on the "Action Complete" page
   observeEvent(input$return_home, {
     active_election_id(NULL)
     election_config(NULL)
