@@ -12,8 +12,10 @@ Currently, the suite supports the following election methods:
 - [STV](https://en.wikipedia.org/wiki/Single_transferable_vote) (from the [vote](https://cran.r-project.org/web/packages/vote/index.html) package)
 - [Borda scores](https://en.wikipedia.org/wiki/Borda_count)
 - Borda with tiebreakers
+
 The code for the CPO STV and Borda methods is from [our own implementation](https://github.com/zenonsommers/cpo_stv) of these methods in R. 
 # Sample Data
 
 To access the sample elections, copy the contents of the `Sample Data` folder into the `Elections` folder. You may need to create the `Elections` folder manually if you have not yet run the app. Currently, the sample election `rcbc-cycle-1` is set to "not accepting new responses" as an example. The admin password for all sample elections is `password`.
+
 
