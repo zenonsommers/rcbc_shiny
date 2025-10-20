@@ -1,14 +1,16 @@
 # ==============================================================================
-# Vibe-Coded Shiny Election App (Final Version)
+# Vibe-Coded Shiny Election App
 #
 # To Run:
 # 1. Install packages:
-#    install.packages(c("shiny", "shinyjs", "uuid", "jsonlite", "sortable",
-#    "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools",
-#    "bslib"))
-# 2. Save this entire script as 'app.R'.
+#    install.packages(c("bslib", "digest", "dplyr", "gtools", "jsonlite",
+#    "magrittr", "readxl", "shiny", "shinyjs", "sortable", "stringi",
+#    "tibble", "tidyverse", "uuid", "vote"))
+# 2. Download the latest version of the repo from
+#    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
+#    local directory
 # 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
-#    saved the file.
+#    saved the files from the repo.
 # ==============================================================================
 
 # Load necessary libraries
@@ -21,6 +23,7 @@ library(dplyr)
 library(vote)
 library(tibble)
 library(bslib)
+library(digest)
 
 # Load the cpo_stv function
 source("cpo_stv.R")
@@ -29,9 +32,8 @@ source("cpo_stv.R")
 default_seed <- 38725
 light_bootswatch <- "flatly"
 dark_bootswatch <- "darkly"
-
 # Set to FALSE to disable custom styling for drag-and-drop elements
-enable_custom_sortable_style <- FALSE
+enable_custom_sortable_style <- TRUE
 
 # -- App Setup -----------------------------------------------------------------
 
@@ -49,6 +51,17 @@ show_error_modal <- function(message) {
     footer = modalButton("Dismiss")
   )
 }
+
+# Helper function for success pop-ups
+show_success_modal <- function(message) {
+  modalDialog(
+    title = "Success",
+    p(message),
+    easyClose = TRUE,
+    footer = modalButton("OK")
+  )
+}
+
 
 # -- Theme Definition for Dark Mode --------------------------------------------
 
@@ -96,7 +109,7 @@ ui <- fluidPage(
   # Dark mode toggle switch
   div(style = "position: absolute; top: 10px; right: 20px; z-index: 1000;",
       actionButton("darkModeToggle", "",
-                   icon = icon("sun"), 
+                   icon = icon("sun"),
                    style = "border: none; background: transparent;")
   ),
   
@@ -122,6 +135,7 @@ server <- function(input, output, session) {
   # Page managers for multi-step processes
   creation_page <- reactiveVal(1)
   processing_page <- reactiveVal(1)
+  editing_page <- reactiveVal(1)
   
   # To store the chosen tabulation method
   tabulation_method <- reactiveVal("cpo_stv")
@@ -156,6 +170,7 @@ server <- function(input, output, session) {
            "create"  = create_ui(),
            "ballot"  = ballot_ui(),
            "process" = process_ui(),
+           "edit"    = edit_ui(),
            "end"     = end_ui()
     )
   })
@@ -182,7 +197,8 @@ server <- function(input, output, session) {
         radioButtons("app_function", "What would you like to do?",
                      choices = c("Create a new election" = "create",
                                  "Submit a ballot" = "ballot",
-                                 "Process election results" = "process"),
+                                 "Process election results" = "process",
+                                 "Edit an election" = "edit"),
                      selected = last_function_choice()),
         br(),
         actionButton("go_to_function", "Continue →",
@@ -262,7 +278,7 @@ server <- function(input, output, session) {
       p(HTML(paste(config$candidates, collapse = "<br>"))),
       hr(),
       radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
-                   choices = c("CPO STV" = "cpo_stv",
+                   choices = c("CPO-STV" = "cpo_stv",
                                "Standard STV" = "stv",
                                "Borda Scores" = "borda",
                                "Borda with Tiebreakers" = "borda_tb"),
@@ -276,7 +292,7 @@ server <- function(input, output, session) {
     config <- election_config()
     
     method_name <- switch(tabulation_method(),
-                          "cpo_stv" = "CPO STV",
+                          "cpo_stv" = "CPO-STV",
                           "stv" = "Standard STV",
                           "borda" = "Borda Scores",
                           "borda_tb" = "Borda with Tiebreakers")
@@ -308,7 +324,7 @@ server <- function(input, output, session) {
           div(id = "tiebreak_options_borda_tb",
               rank_list(
                 text = "Drag to order Borda tie-break methods",
-                labels = c("CPO STV" = "cpo_stv", "Random" = "random",
+                labels = c("CPO-STV" = "cpo_stv", "Random" = "random",
                            "STV" = "stv"),
                 input_id = "tiebreak_methods_borda_tb",
                 class = "custom-rank-list"
@@ -341,6 +357,61 @@ server <- function(input, output, session) {
     )
   }
   
+  edit_ui <- function() {
+    if (editing_page() == 1) edit_page_1_password_ui() else edit_page_2_main_ui()
+  }
+  
+  edit_page_1_password_ui <- function() {
+    tagList(
+      h3(paste("Admin Access for:", active_election_id())),
+      p("This election is password-protected. Please enter the admin password."),
+      hr(),
+      passwordInput("admin_password_check", "Admin Password"),
+      actionButton("submit_password_check", "Submit", class = "btn-primary"),
+      shinyjs::runjs("
+        $(document).off('keypress', '#admin_password_check').on('keypress', '#admin_password_check', function(e) {
+          if (e.which == 13) {
+            $('#submit_password_check').click();
+          }
+        });
+      ")
+    )
+  }
+  
+  edit_page_2_main_ui <- function() {
+    req(election_config())
+    config <- election_config()
+    
+    tagList(
+      h3(paste("Editing Election:", config$title)),
+      p(paste("Election ID:", config$unique_identifier)),
+      hr(),
+      
+      wellPanel(
+        h4("Election Status"),
+        checkboxInput("accepting_responses", "Accepting new responses",
+                      value = config$accepting_responses),
+        p(
+          class = "text-muted",
+          "Uncheck this to prevent new ballots from being submitted."
+        )
+      ),
+      
+      wellPanel(
+        h4("Change Admin Password"),
+        passwordInput("old_password", "Old Password (leave blank if none)"),
+        passwordInput("new_password", "New Password"),
+        passwordInput("confirm_new_password", "Confirm New Password"),
+        actionButton("change_password", "Change Password",
+                     class = "btn-warning")
+      ),
+      
+      br(),
+      actionButton("return_home_from_edit", "Return to Home",
+                   class = "btn-primary")
+    )
+  }
+  
   end_ui <- function() {
     tagList(
       h3("Action Complete"),
@@ -356,30 +427,31 @@ server <- function(input, output, session) {
   
   observeEvent(input$generate_id, {
     election_count <- length(list.dirs(path = "Elections", recursive = FALSE))
-    adjectives <- c("brave", "bright", "calm", "clever", "cool", "eager",
-                    "epic", "fast", "fierce", "fine", "bold", "good", "grand",
+    adjectives <- c("bold", "brave", "bright", "calm", "clever", "cool",
+                    "eager", "epic", "fast", "fierce", "fine", "good", "grand",
                     "great", "happy", "jolly", "jovial", "keen", "kind",
                     "lively", "lucky", "magic", "merry", "neat", "noble",
                     "plucky", "proud", "quirky", "rapid", "regal", "sharp",
                     "shiny", "silent", "silly", "sleek", "slick", "smart",
                     "smooth", "snappy", "spunky", "stark", "stellar", "sturdy",
                     "super", "swift", "true", "vital", "vivid", "witty", "zany")
-    colors <- c("red", "green", "blue", "yellow", "orange", "purple", "pink",
-                "brown", "cyan", "magenta", "teal", "lime", "maroon", "navy",
-                "silver", "olive", "aquamarine", "coral", "indigo", "violet")
-    animals <- c(
-      "lion", "tiger", "bear", "wolf", "fox", "eagle", "shark", "zebra",
-      "rhino", "hippo", "monkey", "giraffe", "elephant", "dolphin", "whale",
-      "penguin", "koala", "kangaroo", "panda", "leopard", "cheetah",
-      "panther", "jaguar", "crocodile", "alligator", "snake", "lizard",
-      "gorilla", "chimpanzee", "horse", "goat", "octopus", "squid",
-      "starfish", "peacock", "ostrich", "swan", "owl", "camel", "badger",
-      "hyena", "warthog", "meerkat", "lemur", "sloth", "armadillo", "beaver",
-      "otter", "raccoon", "skunk", "porcupine", "hedgehog", "bat", "bison",
-      "buffalo", "moose", "elk", "deer", "coyote", "falcon", "hawk",
-      "vulture", "parrot", "toucan", "hummingbird", "woodpecker", "pelican",
-      "seagull", "albatross", "crab", "lobster", "walrus", "seal",
-      "jellyfish")
+    colors <- c("aquamarine", "blue", "brown", "coral", "cyan", "green",
+                "indigo", "lime", "magenta", "maroon", "navy", "olive",
+                "orange", "pink", "purple", "red", "silver", "teal",
+                "violet", "yellow")
+    animals <- c("albatross", "alligator", "armadillo", "badger", "bat",
+                 "bear", "beaver", "bison", "buffalo", "camel", "cheetah",
+                 "chimpanzee", "crab", "crocodile", "coyote", "deer",
+                 "dolphin", "eagle", "elephant", "elk", "falcon", "fox",
+                 "giraffe", "goat", "gorilla", "hawk", "hedgehog", "hippo",
+                 "horse", "hummingbird", "hyena", "jaguar", "jellyfish",
+                 "kangaroo", "koala", "lemur", "leopard", "lion", "lizard",
+                 "lobster", "meerkat", "monkey", "moose", "octopus", "ostrich",
+                 "otter", "owl", "panda", "panther", "parrot", "peacock",
+                 "pelican", "penguin", "porcupine", "raccoon", "rhino",
+                 "seagull", "seal", "shark", "skunk", "sloth", "snake",
+                 "squid", "starfish", "swan", "tiger", "toucan", "vulture",
+                 "walrus", "warthog", "whale", "wolf", "woodpecker", "zebra")
     
     new_id <- NULL; is_unique <- FALSE
     while (!is_unique) {
@@ -407,7 +479,47 @@ server <- function(input, output, session) {
     }
     election_path <- file.path("Elections", id)
     config_path <- file.path(election_path, "config.json")
-    if (input$app_function == "create") {
+    
+    if (input$app_function %in% c("ballot", "process", "edit")) {
+      if (!dir.exists(election_path) || !file.exists(config_path)) {
+        showModal(show_error_modal(
+          "No election found with this ID. Please check or create a new one."
+        ))
+        return()
+      }
+      
+      config <- fromJSON(config_path)
+      
+      if (input$app_function == "ballot") {
+        if (!is.null(config$accepting_responses) && !config$accepting_responses) {
+          showModal(show_error_modal(
+            "This election is not currently accepting new ballots."
+          ))
+          return()
+        }
+      }
+      
+      if (input$app_function == "edit") {
+        if (is.null(config$accepting_responses)) {
+          config$accepting_responses <- TRUE
+          write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+        }
+      }
+      
+      election_config(config)
+      active_election_id(id)
+      
+      if (input$app_function == "edit") {
+        if (!is.null(config$password_hash) && config$password_hash != "") {
+          editing_page(1)
+        } else {
+          editing_page(2)
+        }
+      }
+      
+      current_ui(input$app_function)
+      
+    } else if (input$app_function == "create") {
       if (dir.exists(election_path)) {
         showModal(show_error_modal(
           "An election with this ID already exists. Please choose another."
@@ -415,17 +527,6 @@ server <- function(input, output, session) {
       } else {
         active_election_id(id)
         current_ui("create")
-      }
-    } else {
-      if (!dir.exists(election_path) || !file.exists(config_path)) {
-        showModal(show_error_modal(
-          "No election found with this ID. Please check or create a new one."
-        ))
-      } else {
-        config <- fromJSON(config_path)
-        election_config(config)
-        active_election_id(id)
-        current_ui(input$app_function)
       }
     }
   })
@@ -473,10 +574,11 @@ server <- function(input, output, session) {
       allow_ties = input$allow_ties,
       password_hash = if (input$password != "") {
         digest::digest(input$password, "sha256")
-      } else { NULL }
+      } else { NULL },
+      accepting_responses = TRUE
     )
     write_json(config, file.path(election_path, "config.json"),
-               auto_unbox = TRUE)
+               auto_unbox = TRUE, pretty = TRUE)
     if (!is.null(input$ballot_file)) {
       ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
       processed_df <- ballot_df %>% select(where(is.numeric)) %>%
@@ -524,6 +626,14 @@ server <- function(input, output, session) {
   
   process_and_save_ballot <- function() {
     config <- election_config()
+    
+    if (!is.null(config$accepting_responses) && !config$accepting_responses) {
+      showModal(show_error_modal(
+        "This election is not currently accepting responses."
+      ))
+      return()
+    }
+    
     ranks <- NULL
     if (!config$allow_incomplete && !config$allow_ties) {
       ranks <- match(config$candidates, input$ranked_ballot_strict)
@@ -579,6 +689,74 @@ server <- function(input, output, session) {
     removeModal()
     process_and_save_ballot()
   })
+  
+  # -- Edit Election Logic -----------------------------------------------------
+  
+  observeEvent(input$submit_password_check, {
+    req(input$admin_password_check)
+    config <- election_config()
+    
+    hashed_input <- digest(input$admin_password_check, "sha256")
+    
+    if (hashed_input == config$password_hash) {
+      editing_page(2)
+    } else {
+      showModal(show_error_modal("Incorrect password."))
+    }
+  })
+  
+  observeEvent(input$accepting_responses, {
+    config <- election_config()
+    config$accepting_responses <- input$accepting_responses
+    election_config(config)
+    
+    config_path <- file.path("Elections", active_election_id(), "config.json")
+    write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+    
+    showNotification(
+      paste("Accepting responses set to:", input$accepting_responses),
+      type = "message"
+    )
+  })
+  
+  observeEvent(input$change_password, {
+    config <- election_config()
+    
+    # Validation checks
+    if (input$new_password != input$confirm_new_password) {
+      showModal(show_error_modal("New passwords do not match."))
+      return()
+    }
+    
+    # Check old password if one is set
+    has_old_pass <- !is.null(config$password_hash) && config$password_hash != ""
+    if (has_old_pass) {
+      hashed_old_pass <- digest(input$old_password, "sha256")
+      if (hashed_old_pass != config$password_hash) {
+        showModal(show_error_modal("Incorrect old password."))
+        return()
+      }
+    } else {
+      if (input$old_password != "") {
+        showModal(show_error_modal(
+          "No old password is set; 'Old Password' field should be blank."
+        ))
+        return()
+      }
+    }
+    
+    # Update and save password
+    config$password_hash <- if (input$new_password != "") {
+      digest(input$new_password, "sha256")
+    } else { NULL }
+    election_config(config)
+    
+    config_path <- file.path("Elections", active_election_id(), "config.json")
+    write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+    
+    show_success_modal("Password updated successfully.")
+  })
+  
   
   # -- Process Results Logic & Page Flow ---------------------------------------
   
@@ -681,6 +859,7 @@ server <- function(input, output, session) {
     output$table_results <- renderTable({ NULL })
     creation_page(1)
     processing_page(1)
+    editing_page(1)
     current_ui("hub")
     
     shinyjs::delay(1, {
@@ -690,6 +869,7 @@ server <- function(input, output, session) {
   
   observeEvent(input$return_home_from_results, { reset_to_hub() })
   observeEvent(input$return_home, { reset_to_hub() })
+  observeEvent(input$return_home_from_edit, { reset_to_hub() })
   
 }
 
