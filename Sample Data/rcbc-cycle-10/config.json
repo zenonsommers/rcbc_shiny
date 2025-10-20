@@ -1,0 +1,10 @@
+{
+  "unique_identifier": "rcbc-cycle-10",
+  "title": "rcbc-cycle-10",
+  "candidates": ["Labyrinths - 240", "Catch-22 - 544", "Strangers on a train - 273", "S. - 472", "Rita Hayworth ... 128", "Recursion - 336", "The Great Gatsby - 208", "Circe - 400", "I, Robot - 256", "Rebecca - 446"],
+  "seats": 3,
+  "allow_incomplete": false,
+  "allow_ties": false,
+  "password_hash": "a97bc0e5a9ad34434cdd8a12bf7699319546e40efe8f9b01b48eb2071fdf8ab3",
+  "accepting_responses": true
+}

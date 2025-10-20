@@ -1,0 +1,10 @@
+{
+  "unique_identifier": "rcbc-cycle-9",
+  "title": "rcbc-cycle-9",
+  "candidates": ["None of This is True - 390", "Three Body Problem - 472", "The Gone Away World - 531", "Project Hail Mary - 476", "The Sympathizer - 371", "The Cat Who Saved Books 198", "Wind-up Bird Chronicle - 607", "The Dispossessed - 387", "Cloud Atlas - 509", "The City and the City - 312", "American Gods - 635", "If on a Winter's Night a Traveler - 260"],
+  "seats": 3,
+  "allow_incomplete": false,
+  "allow_ties": false,
+  "password_hash": "a97bc0e5a9ad34434cdd8a12bf7699319546e40efe8f9b01b48eb2071fdf8ab3",
+  "accepting_responses": true
+}
