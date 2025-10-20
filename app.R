@@ -4,7 +4,7 @@
 # To Run:
 # 1. Install packages:
 #    install.packages(c("shiny", "shinyjs", "uuid", "jsonlite", "sortable", 
-#     "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools"))
+#    "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools"))
 # 2. Save this entire script as 'app.R'.
 # 3. Open R/RStudio and run `shiny::runApp()` in the directory where you saved the file.
 # ==============================================================================
@@ -61,8 +61,10 @@ server <- function(input, output, session) {
   active_election_id <- reactiveVal(NULL)
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
-  # This is the reactive value for the ballot confirmation feature
   initial_ballot_order <- reactiveVal(NULL) 
+  
+  # To manage the two pages of the creation UI
+  creation_page <- reactiveVal(1) 
   
   # -- Dynamic UI Rendering ----------------------------------------------------
   
@@ -103,17 +105,34 @@ server <- function(input, output, session) {
     )
   }
   
+  # Main router for the two-page creation UI
   create_ui <- function() {
+    if (creation_page() == 1) {
+      create_page_1_ui()
+    } else {
+      create_page_2_ui()
+    }
+  }
+  
+  # UI for Page 1 of Election Creation (File Upload)
+  create_page_1_ui <- function() {
+    fluidPage(
+      h3(paste("Creating New Election:", active_election_id())),
+      p("You can pre-fill this election by uploading a CSV of ranked ballots, typically from a Google Form."),
+      hr(),
+      fileInput("ballot_file", "Optional: Upload CSV to Pre-fill Ballots",
+                accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
+      actionButton("to_create_page_2", "Continue to Details", class = "btn-primary")
+    )
+  }
+  
+  # UI for Page 2 of Election Creation (Main Form)
+  create_page_2_ui <- function() {
     fluidPage(
       h3(paste("Creating New Election:", active_election_id())),
       p("Define the parameters for your new election."),
       hr(),
       textInput("election_title", "Election Title", placeholder = "e.g., Annual Board Election"),
-      
-      # <-- CHANGE: Add optional file input for pre-filling ballots
-      fileInput("ballot_file", "Optional: Upload CSV to Pre-fill Ballots", 
-                accept = c("text/csv", "text/comma-separated-values,text/plain", ".csv")),
-      
       textAreaInput("candidate_names", "Candidate Names (one per line)", rows = 5),
       numericInput("seats", "Number of Seats to Elect", value = 1, min = 1, step = 1),
       checkboxInput("allow_incomplete", "Allow incomplete ballots (voters can leave candidates unranked)", value = FALSE),
@@ -146,16 +165,12 @@ server <- function(input, output, session) {
       hr(),
       div(id = "processing_inputs",
           numericInput("process_seats", "Number of seats to elect", value = config$seats, min = 1),
-          
           rank_list(
             text = "Drag to order tie-break methods (Top = First)",
             labels = c("Borda" = "borda", "Random" = "random", "STV" = "stv"),
             input_id = "tiebreak_methods"
           ),
-          
-          # <-- CHANGE: The value is now set to the default_seed variable
           numericInput("seed", "Random Seed for Tie-Breaking", value = default_seed),
-          
           actionButton("submit_processing", "Process Results", class = "btn-info", icon = icon("calculator"))
       ),
       hr(),
@@ -219,18 +234,10 @@ server <- function(input, output, session) {
     new_id <- NULL
     is_unique <- FALSE
     while (!is_unique) {
-      # Conditionally generate the new ID
       if (election_count <= 10000) {
-        # Standard three-part ID
-        new_id <- paste0(sample(adjectives, 1), "-",
-                         sample(colors, 1), "-",
-                         sample(animals, 1))
+        new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1))
       } else {
-        # Four-part ID with a numeric suffix for scalability
-        new_id <- paste0(sample(adjectives, 1), "-",
-                         sample(colors, 1), "-",
-                         sample(animals, 1), "-",
-                         floor(runif(1, 1000, 9999)))
+        new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1), "-", floor(runif(1, 1000, 9999)))
       }
       if (!dir.exists(file.path("Elections", new_id))) {
         is_unique <- TRUE
@@ -266,41 +273,39 @@ server <- function(input, output, session) {
     }
   })
   
+  # Observer to handle the transition from creation page 1 to 2
+  observeEvent(input$to_create_page_2, {
+    candidate_names_from_csv <- ""
+    
+    if (!is.null(input$ballot_file)) {
+      ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
+      
+      processed_df <- ballot_df %>%
+        select(where(is.numeric)) %>%
+        removeQuestion()
+      
+      candidates <- colnames(processed_df)
+      candidate_names_from_csv <- paste(candidates, collapse = "\n")
+    }
+    
+    creation_page(2)
+    
+    shinyjs::delay(1, {
+      updateTextInput(session, "election_title", value = active_election_id())
+      if (candidate_names_from_csv != "") {
+        updateTextAreaInput(session, "candidate_names", value = candidate_names_from_csv)
+      }
+    })
+  })
+  
   # -- Create Election Logic ---------------------------------------------------
   
   observeEvent(input$submit_creation, {
+    candidates <- trimws(unlist(strsplit(input$candidate_names, "\n")))
+    candidates <- candidates[candidates != ""]
     
-    # Initialize candidates variable
-    candidates <- NULL
-    
-    # Logic to handle CSV file upload
-    if (!is.null(input$ballot_file)) {
-      # Read the uploaded CSV file
-      ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-      
-      # <-- ADD THIS LINE to see the data structure in your R console
-      print(str(ballot_df))
-      
-      # Process the dataframe using the provided steps
-      processed_df <- ballot_df %>%
-        select(where(is.numeric)) %>% 
-        removeQuestion()
-      
-      # Get candidate names from the cleaned column headers
-      candidates <- colnames(processed_df)
-      
-      # <-- CHANGE: This new line updates the text area in the UI
-      updateTextAreaInput(session, "candidate_names", value = paste(candidates, collapse = "\n"))
-      
-    } else {
-      # If no file, get candidates from the text area as before
-      candidates <- trimws(unlist(strsplit(input$candidate_names, "\n")))
-      candidates <- candidates[candidates != ""]
-    }
-    
-    # Validation checks
     if (length(candidates) < 3) {
-      showModal(show_error_modal("Please specify at least three candidates, either via CSV or manually."))
+      showModal(show_error_modal("Please specify at least three candidates."))
       return()
     }
     if (input$seats >= length(candidates)) {
@@ -308,7 +313,6 @@ server <- function(input, output, session) {
       return()
     }
     
-    # Create election directory and config file
     election_path <- file.path("Elections", active_election_id())
     dir.create(election_path)
     
@@ -325,12 +329,11 @@ server <- function(input, output, session) {
     
     # If a file was uploaded, write each row as a ballot
     if (!is.null(input$ballot_file)) {
-      # Loop through each row of the processed data frame
+      ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
+      processed_df <- ballot_df %>% select(where(is.numeric)) %>% removeQuestion()
+      
       for (i in 1:nrow(processed_df)) {
-        # Create a named list for the ballot (CandidateName = Rank)
         ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
-        
-        # Generate a unique filename and save the ballot as a JSON file
         ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
         write_json(ballot_data, file.path(election_path, ballot_filename), auto_unbox = TRUE)
       }
@@ -430,9 +433,7 @@ server <- function(input, output, session) {
     election_path <- file.path("Elections", active_election_id())
     ballot_files <- list.files(election_path, pattern = "ballot_.*\\.json", full.names = TRUE)
     if (length(ballot_files) == 0) {
-      output$stv_results <- renderPrint({
-        "No ballots have been submitted for this election."
-      })
+      output$stv_results <- renderPrint({ "No ballots have been submitted for this election." })
       return()
     }
     all_ballots <- lapply(ballot_files, function(f) {
@@ -441,22 +442,20 @@ server <- function(input, output, session) {
       return(as.data.frame(ballot))
     })
     ballot_df <- bind_rows(all_ballots)
-    set.seed(input$seed)
+    
     results <- tryCatch({
       capture.output(
         cpo_stv(ballot_df, seats = input$process_seats, 
-                ties = input$tiebreak_methods, seed = input$seed, verbose = T)
+                ties = input$tiebreak_methods, seed = input$seed)
       )
     }, error = function(e) {
       paste("An error occurred during calculation:", e$message)
     })
     
-    # Display the results
-    output$stv_results <- renderText({
-      paste(results, collapse = "\n")
+    output$stv_results <- renderPrint({
+      cat(paste(results, collapse = "\n"))
     })
     
-    # <-- CHANGE: Instead of switching screens, just hide inputs and show the new button
     shinyjs::hide("processing_inputs")
     shinyjs::show("post_processing_ui")
   })
@@ -469,9 +468,8 @@ server <- function(input, output, session) {
     end_screen_message("")
     shinyjs::reset("election_id")
     shinyjs::show("processing_inputs")
-    output$stv_results <- renderText({
-      ""
-    })
+    output$stv_results <- renderText({ "" })
+    creation_page(1) # Reset the creation flow
     current_ui("hub")
   })
   
