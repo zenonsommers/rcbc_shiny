@@ -134,10 +134,7 @@ server <- function(input, output, session) {
       hr(),
       textInput("election_title", "Election Title", placeholder = "e.g., Annual Board Election"),
       textAreaInput("candidate_names", "Candidate Names (one per line)", rows = 5),
-      
-      # <-- CHANGE: Default value for seats is now 3
       numericInput("seats", "Number of Seats to Elect", value = 3, min = 1, step = 1),
-      
       checkboxInput("allow_incomplete", "Allow incomplete ballots (voters can leave candidates unranked)", value = FALSE),
       checkboxInput("allow_ties", "Allow tied ranks (voters can give the same rank to multiple candidates)", value = FALSE),
       passwordInput("password", "Optional: Set an Admin Password"),
@@ -202,37 +199,10 @@ server <- function(input, output, session) {
   # -- Hub Logic ---------------------------------------------------------------
   
   observeEvent(input$generate_id, {
-    # Count the number of existing election directories
     election_count <- length(list.dirs(path = "Elections", recursive = FALSE))
-    
-    # The full lists of words for the generator
-    adjectives <- c("brave", "bright", "calm", "clever", "cool", "eager", "epic", "fast", 
-                    "fierce", "fine", "bold", "good", "grand", "great", "happy", 
-                    "jolly", "jovial", "keen", "kind", "lively", "lucky", "magic", 
-                    "merry", "neat", "noble", "plucky", "proud", "quirky", "rapid", 
-                    "regal", "sharp", "shiny", "silent", "silly", "sleek", "slick", 
-                    "smart", "smooth", "snappy", "spunky", "stark", "stellar", 
-                    "sturdy", "super", "swift", "true", "vital", "vivid", "witty", 
-                    "zany")
-    
-    colors <- c("red", "green", "blue", "yellow", "orange", "purple", "pink", 
-                "brown", "cyan", "magenta", "teal", "lime", "maroon", "navy", 
-                "silver", "olive", "aquamarine", "coral", "indigo", "violet")
-    
-    animals <- c("lion", "tiger", "bear", "wolf", "fox", "eagle", "shark", 
-                 "zebra", "rhino", "hippo", "monkey", "giraffe", "elephant", 
-                 "dolphin", "whale", "penguin", "koala", "kangaroo", 
-                 "panda", "leopard", "cheetah", "panther", "jaguar", 
-                 "crocodile", "alligator", "snake", "lizard", "gorilla", 
-                 "chimpanzee", "horse", "goat", "octopus", "squid", 
-                 "starfish", "peacock", "ostrich", "swan", "owl", "camel", 
-                 "badger", "hyena", "warthog", "meerkat", "lemur", 
-                 "sloth", "armadillo", "beaver", "otter", "raccoon", 
-                 "skunk", "porcupine", "hedgehog", "bat", "bison", 
-                 "buffalo", "moose", "elk", "deer", "coyote", "falcon", 
-                 "hawk", "vulture", "parrot", "toucan", "hummingbird", 
-                 "woodpecker", "pelican", "seagull", "albatross", "crab", 
-                 "lobster", "walrus", "seal", "jellyfish")
+    adjectives <- c("brave", "bright", "calm", "clever", "cool", "eager", "epic", "fast", "fierce", "fine", "bold", "good", "grand", "great", "happy", "jolly", "jovial", "keen", "kind", "lively", "lucky", "magic", "merry", "neat", "noble", "plucky", "proud", "quirky", "rapid", "regal", "sharp", "shiny", "silent", "silly", "sleek", "slick", "smart", "smooth", "snappy", "spunky", "stark", "stellar", "sturdy", "super", "swift", "true", "vital", "vivid", "witty", "zany")
+    colors <- c("red", "green", "blue", "yellow", "orange", "purple", "pink", "brown", "cyan", "magenta", "teal", "lime", "maroon", "navy", "silver", "olive", "aquamarine", "coral", "indigo", "violet")
+    animals <- c("lion", "tiger", "bear", "wolf", "fox", "eagle", "shark", "zebra", "rhino", "hippo", "monkey", "giraffe", "elephant", "dolphin", "whale", "penguin", "koala", "kangaroo", "panda", "leopard", "cheetah", "panther", "jaguar", "crocodile", "alligator", "snake", "lizard", "gorilla", "chimpanzee", "horse", "goat", "octopus", "squid", "starfish", "peacock", "ostrich", "swan", "owl", "camel", "badger", "hyena", "warthog", "meerkat", "lemur", "sloth", "armadillo", "beaver", "otter", "raccoon", "skunk", "porcupine", "hedgehog", "bat", "bison", "buffalo", "moose", "elk", "deer", "coyote", "falcon", "hawk", "vulture", "parrot", "toucan", "hummingbird", "woodpecker", "pelican", "seagull", "albatross", "crab", "lobster", "walrus", "seal", "jellyfish")
     
     new_id <- NULL
     is_unique <- FALSE
@@ -242,7 +212,8 @@ server <- function(input, output, session) {
       } else {
         new_id <- paste0(sample(adjectives, 1), "-", sample(colors, 1), "-", sample(animals, 1), "-", floor(runif(1, 1000, 9999)))
       }
-      if (!dir.exists(file.path("Elections", new_id))) {
+      # <-- CHANGE: Check the lowercase version of the ID
+      if (!dir.exists(file.path("Elections", tolower(new_id)))) {
         is_unique <- TRUE
       }
     }
@@ -250,7 +221,9 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$go_to_function, {
-    id <- trimws(input$election_id)
+    # <-- CHANGE: Convert the ID to lowercase immediately
+    id <- tolower(trimws(input$election_id))
+    
     if (id == "") {
       showModal(show_error_modal("Election ID cannot be empty."))
       return()
@@ -276,7 +249,6 @@ server <- function(input, output, session) {
     }
   })
   
-  # Observer to handle the transition from creation page 1 to 2
   observeEvent(input$to_create_page_2, {
     candidate_names_from_csv <- ""
     
@@ -330,7 +302,6 @@ server <- function(input, output, session) {
     )
     write_json(config, file.path(election_path, "config.json"), auto_unbox = TRUE)
     
-    # If a file was uploaded, write each row as a ballot
     if (!is.null(input$ballot_file)) {
       ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
       processed_df <- ballot_df %>% select(where(is.numeric)) %>% removeQuestion()
