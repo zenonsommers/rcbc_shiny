@@ -185,7 +185,9 @@ server <- function(input, output, session) {
       hr(),
       radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
                    choices = c("CPO STV" = "cpo_stv",
-                               "Standard STV" = "stv"),
+                               "Standard STV" = "stv",
+                               "Borda Count" = "borda",
+                               "Borda with Tiebreakers" = "borda_tb"),
                    selected = "cpo_stv"),
       actionButton("to_process_page_2", "Continue", class = "btn-primary")
     )
@@ -194,29 +196,51 @@ server <- function(input, output, session) {
   process_page_2_ui <- function() {
     req(election_config())
     config <- election_config()
+    
+    method_name <- switch(tabulation_method(),
+                          "cpo_stv" = "CPO STV",
+                          "stv" = "Standard STV",
+                          "borda" = "Borda Count",
+                          "borda_tb" = "Borda with Tiebreakers")
+    
     fluidPage(
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
-      p(paste("Tabulation method:", tabulation_method())),
+      p(paste("Tabulation method:", method_name)),
       hr(),
       strong("Candidates in this Election:"),
       p(HTML(paste(config$candidates, collapse = "<br>"))),
       br(),
       div(id = "processing_inputs",
-          numericInput("process_seats", "Number of seats to elect",
-                       value = config$seats, min = 1),
+          div(id = "seats_option",
+              numericInput("process_seats", "Number of seats to elect",
+                           value = config$seats, min = 1)
+          ),
           
-          div(id = "tiebreak_options",
+          div(id = "tiebreak_options_cpo",
               rank_list(
-                text = "Drag to order tie-break methods (Top = First)",
+                text = "Drag to order CPO-STV tie-break methods",
                 labels = c("Borda" = "borda", "Random" = "random",
                            "STV" = "stv"),
-                input_id = "tiebreak_methods"
+                input_id = "tiebreak_methods_cpo"
+              )
+          ),
+          
+          div(id = "tiebreak_options_borda_tb",
+              rank_list(
+                text = "Drag to order Borda tie-break methods",
+                labels = c("CPO STV" = "cpo_stv", "Random" = "random",
+                           "STV" = "stv"),
+                input_id = "tiebreak_methods_borda_tb"
               )
           ),
           
           numericInput("seed", "Random Seed for Tie-Breaking",
                        value = default_seed),
+          
+          checkboxInput("verbose_output", "Show verbose output",
+                        value = FALSE),
+          
           actionButton("submit_processing", "Process Results",
                        class = "btn-info", icon = icon("calculator"))
       ),
@@ -391,7 +415,7 @@ server <- function(input, output, session) {
   output$ballot_interface <- renderUI({
     config <- election_config()
     randomized_candidates <- sample(config$candidates)
-    if (!config$allow_incomplete && !config.allow_ties) {
+    if (!config$allow_incomplete && !config$allow_ties) {
       initial_ballot_order(randomized_candidates)
       rank_list(
         text = "Rank candidates by dragging them into order (Top = 1st).",
@@ -476,8 +500,17 @@ server <- function(input, output, session) {
     tabulation_method(input$tabulation_method_choice)
     processing_page(2)
     shinyjs::delay(1, {
-      shinyjs::toggle(id = "tiebreak_options",
-                      condition = input$tabulation_method_choice == "cpo_stv")
+      method <- input$tabulation_method_choice
+      
+      # Show/hide options based on the chosen method
+      show_seats <- method != "borda"
+      show_cpo_ties <- method == "cpo_stv"
+      show_borda_tb_ties <- method == "borda_tb"
+      
+      shinyjs::toggle(id = "seats_option", condition = show_seats)
+      shinyjs::toggle(id = "tiebreak_options_cpo", condition = show_cpo_ties)
+      shinyjs::toggle(id = "tiebreak_options_borda_tb",
+                      condition = show_borda_tb_ties)
     })
   })
   
@@ -499,14 +532,25 @@ server <- function(input, output, session) {
     ballot_df <- bind_rows(all_ballots)
     
     results <- tryCatch({
-      capture.output(
-        if (tabulation_method() == "cpo_stv") {
+      capture.output({
+        method <- tabulation_method()
+        verbose_flag <- input$verbose_output
+        
+        if (method == "cpo_stv") {
           cpo_stv(ballot_df, seats = input$process_seats,
-                  ties = input$tiebreak_methods, seed = input$seed)
+                  ties = input$tiebreak_methods_cpo, seed = input$seed,
+                  verbose = verbose_flag)
+        } else if (method == "borda_tb") {
+          borda(ballot_df, seats = input$process_seats,
+                ties = input$tiebreak_methods_borda_tb, seed = input$seed,
+                verbose = verbose_flag)
+        } else if (method == "borda") {
+          borda(ballot_df, seed = input$seed, verbose = verbose_flag)
         } else { # Standard stv
-          stv(ballot_df, nseats = input$process_seats, seed = input$seed)
+          stv(ballot_df, nseats = input$process_seats, seed = input$seed,
+              verbose = verbose_flag)
         }
-      )
+      })
     }, error = function(e) {
       paste("An error occurred during calculation:", e$message)
     })
