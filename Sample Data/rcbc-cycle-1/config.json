@@ -1,0 +1,10 @@
+{
+  "unique_identifier": "rcbc-cycle-1",
+  "title": "RCBC Cycle 1",
+  "candidates": ["Stamped from the beginning - 594", "Breakfast with Socrates - 201", "Labyrinths - 240", "Great Gatsby ~ 180 pg", "The Sixth Extinction - 269", "Sapiens: A Brief History of Mankind (416)", "Circe (416)"],
+  "seats": 3,
+  "allow_incomplete": false,
+  "allow_ties": false,
+  "password_hash": "a97bc0e5a9ad34434cdd8a12bf7699319546e40efe8f9b01b48eb2071fdf8ab3",
+  "accepting_responses": false
+}
