@@ -4,7 +4,8 @@
 # To Run:
 # 1. Install packages:
 #    install.packages(c("shiny", "shinyjs", "uuid", "jsonlite", "sortable",
-#    "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools"))
+#    "dplyr", "vote", "tidyverse", "magrittr", "readxl", "stringi", "gtools",
+#    "bslib"))
 # 2. Save this entire script as 'app.R'.
 # 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
 #    saved the file.
@@ -19,12 +20,17 @@ library(sortable)
 library(dplyr)
 library(vote)
 library(tibble)
+library(bslib)
 
 # Load the cpo_stv function
 source("cpo_stv.R")
 
 # Define default seed
 default_seed <- 38725
+
+# Set Bootswatch Themes
+light_bootswatch <- "flatly"
+dark_bootswatch <- "darkly"
 
 # -- App Setup -----------------------------------------------------------------
 
@@ -43,57 +49,24 @@ show_error_modal <- function(message) {
   )
 }
 
+# -- Theme Definition for Dark Mode --------------------------------------------
+
+# Define a base theme with the desired font
+theme <- bs_theme(version = 5, base_font = font_google("Inter"), 
+                  bootswatch = light_bootswatch)
+
+
 # -- UI Definition -------------------------------------------------------------
 
 ui <- fluidPage(
-  useShinyjs(), # Initialize shinyjs
+  theme = bs_theme_update(theme, bootswatch = light_bootswatch), # Start with light theme
+  useShinyjs(),
   
-  # CSS for Dark Mode
+  # Custom CSS for dark mode toggle visibility
   tags$head(
     tags$style(HTML("
-      /* Light Mode Variables */
-      :root {
-        --bg-color: #ffffff;
-        --text-color: #333333;
-        --well-bg: #f5f5f5;
-        --input-bg: #ffffff;
-        --input-border: #cccccc;
-      }
-
-      /* Dark Mode Class */
-      .dark-mode {
-        --bg-color: #2c3e50;
-        --text-color: #ecf0f1;
-        --well-bg: #34495e;
-        --input-bg: #5d6d7e;
-        --input-border: #7f8c8d;
-      }
-
-      /* Applying styles */
-      body {
-        background-color: var(--bg-color);
-        color: var(--text-color);
-        transition: background-color 0.3s, color 0.3s;
-      }
-      .well {
-        background-color: var(--well-bg);
-        border-color: var(--input-border);
-      }
-      h1, h2, h3, h4, h5, h6 {
-        color: var(--text-color);
-      }
-      .form-control, .selectize-input, .selectize-dropdown {
-        background-color: var(--input-bg) !important;
-        color: var(--text-color) !important;
-        border-color: var(--input-border) !important;
-      }
-      .shiny-input-container {
-        color: var(--text-color);
-      }
-      #text_results {
-        background-color: var(--input-bg);
-        border: 1px solid var(--input-border);
-        color: var(--text-color);
+      #darkModeToggle {
+        color: var(--bs-body-color);
       }
     "))
   ),
@@ -101,7 +74,7 @@ ui <- fluidPage(
   # Dark mode toggle switch
   div(style = "position: absolute; top: 10px; right: 20px; z-index: 1000;",
       actionButton("darkModeToggle", "",
-                   icon = icon("moon"),
+                   icon = icon("sun"), # Start with sun, as light mode is default
                    style = "border: none; background: transparent;")
   ),
   
@@ -122,7 +95,7 @@ server <- function(input, output, session) {
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
   initial_ballot_order <- reactiveVal(NULL)
-  is_dark_mode <- reactiveVal(FALSE)
+  is_dark <- reactiveVal(FALSE)
   
   # Page managers for multi-step processes
   creation_page <- reactiveVal(1)
@@ -137,15 +110,20 @@ server <- function(input, output, session) {
   # -- Dark Mode Logic ---------------------------------------------------------
   
   observeEvent(input$darkModeToggle, {
-    shinyjs::toggleClass(selector = "body", class = "dark-mode")
-    is_dark_mode(!is_dark_mode()) # Toggle the state
+    is_dark(!is_dark())
     
-    # Update the icon based on the mode
-    if (is_dark_mode()) {
-      updateActionButton(session, "darkModeToggle", icon = icon("sun"))
-    } else {
+    # Update the icon based on the new mode
+    if (is_dark()) {
       updateActionButton(session, "darkModeToggle", icon = icon("moon"))
+    } else {
+      updateActionButton(session, "darkModeToggle", icon = icon("sun"))
     }
+    
+    # Update the theme
+    session$setCurrentTheme(
+      bs_theme_update(theme, bootswatch = if (is_dark()) dark_bootswatch 
+                      else light_bootswatch)
+    )
   })
   
   # -- Dynamic UI Rendering ----------------------------------------------------
@@ -163,7 +141,7 @@ server <- function(input, output, session) {
   # -- UI Components -----------------------------------------------------------
   
   hub_ui <- function() {
-    fluidPage(
+    tagList(
       h3("Welcome"),
       p("Select an action and provide an Election ID to begin."),
       hr(),
@@ -196,7 +174,7 @@ server <- function(input, output, session) {
   }
   
   create_page_1_ui <- function() {
-    fluidPage(
+    tagList(
       h3(paste("Creating New Election:", active_election_id())),
       p(
         "You can pre-fill this election by uploading a CSV of ranked ballots,",
@@ -212,7 +190,7 @@ server <- function(input, output, session) {
   }
   
   create_page_2_ui <- function() {
-    fluidPage(
+    tagList(
       h3(paste("Creating New Election:", active_election_id())),
       p("Define the parameters for your new election."),
       hr(),
@@ -236,7 +214,7 @@ server <- function(input, output, session) {
   ballot_ui <- function() {
     req(election_config())
     config <- election_config()
-    fluidPage(
+    tagList(
       h3(paste("Submitting Ballot for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
@@ -254,7 +232,7 @@ server <- function(input, output, session) {
   process_page_1_ui <- function() {
     req(election_config())
     config <- election_config()
-    fluidPage(
+    tagList(
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
@@ -281,7 +259,7 @@ server <- function(input, output, session) {
                           "borda" = "Borda Scores",
                           "borda_tb" = "Borda with Tiebreakers")
     
-    fluidPage(
+    tagList(
       h3(paste("Processing Results for:", config$title)),
       p(paste("Election ID:", config$unique_identifier)),
       p(paste("Tabulation method:", method_name)),
@@ -338,7 +316,7 @@ server <- function(input, output, session) {
   }
   
   end_ui <- function() {
-    fluidPage(
+    tagList(
       h3("Action Complete"),
       hr(),
       p(end_screen_message()),
