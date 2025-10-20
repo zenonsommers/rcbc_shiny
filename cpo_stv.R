@@ -682,21 +682,6 @@ cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE,
   }
 }
 
-filenames <- c("Cycle 1.csv", "Cycle 2.csv", "Cycle 4.csv", "Cycle 5.csv",
-               "Cycle 6.csv", "Cycle 7.csv", "Cycle 8.csv")
-filepaths <- file.path("Sample Data", filenames)
-
-election_results <- sapply(1:length(filenames), function(file) {
-  result <- filepaths[file] %>% 
-    read.csv() %>% # Open the votes
-    select(where(is_integer)) %>% # remove timestamp
-    removeQuestion() %>% # reduce column names to unique IDs, i.e., book titles
-    cpo_stv(verbose = FALSE) # actually run the vote to get the results
-  print(paste("The result of the election from file", filenames[file], "is:"))
-  print(result$winner)
-  return(result)
-})
-
 
 # Notes:
 
