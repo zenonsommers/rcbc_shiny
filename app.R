@@ -52,7 +52,7 @@ show_error_modal <- function(message) {
 # -- Theme Definition for Dark Mode --------------------------------------------
 
 # Define a base theme with the desired font
-theme <- bs_theme(version = 5, base_font = font_google("Inter"), 
+theme <- bs_theme(version = 5, base_font = font_google("Inter"),
                   bootswatch = light_bootswatch)
 
 
@@ -121,7 +121,7 @@ server <- function(input, output, session) {
     
     # Update the theme
     session$setCurrentTheme(
-      bs_theme_update(theme, bootswatch = if (is_dark()) dark_bootswatch 
+      bs_theme_update(theme, bootswatch = if (is_dark()) dark_bootswatch
                       else light_bootswatch)
     )
   })
@@ -291,8 +291,10 @@ server <- function(input, output, session) {
               )
           ),
           
-          numericInput("seed", "Random Seed for Tie-Breaking",
-                       value = default_seed),
+          div(id = "seed_option",
+              numericInput("seed", "Random Seed for Tie-Breaking",
+                           value = default_seed)
+          ),
           
           checkboxInput("verbose_output", "Show verbose output",
                         value = FALSE),
@@ -564,11 +566,13 @@ server <- function(input, output, session) {
       show_seats <- method != "borda"
       show_cpo_ties <- method == "cpo_stv"
       show_borda_tb_ties <- method == "borda_tb"
+      show_seed <- method != "borda"
       
       shinyjs::toggle(id = "seats_option", condition = show_seats)
       shinyjs::toggle(id = "tiebreak_options_cpo", condition = show_cpo_ties)
       shinyjs::toggle(id = "tiebreak_options_borda_tb",
                       condition = show_borda_tb_ties)
+      shinyjs::toggle(id = "seed_option", condition = show_seed)
     })
   })
   
