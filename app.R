@@ -504,8 +504,7 @@ server <- function(input, output, session) {
           cpo_stv(ballot_df, seats = input$process_seats,
                   ties = input$tiebreak_methods, seed = input$seed)
         } else { # Standard stv
-          stv(ballot_df, nseats = input$process_seats, seed = input$seed,
-              tie_break = "random")
+          stv(ballot_df, nseats = input$process_seats, seed = input$seed)
         }
       )
     }, error = function(e) {
