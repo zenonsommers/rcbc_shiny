@@ -72,10 +72,12 @@ removeQuestion <- function(df) {
   }
   
   # now actually remove both LCS, then return the updated dataframe
+  # <-- CHANGE: Escape special regex characters in the found strings
   colnames(df) <- cols %>%
-    str_replace(LCS1, "") %>%
-    stri_replace_last_fixed(LCS2, "") %>%
-    str_replace_all("\\.+", "\\.")
+    str_replace(stringr::str_escape(LCS1), "") %>%
+    str_replace(stringr::str_escape(LCS2), "") %>%
+    str_trim() # Use str_trim for a cleaner result than replacing periods
+  
   return(df)
 }
 

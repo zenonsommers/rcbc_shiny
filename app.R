@@ -134,7 +134,10 @@ server <- function(input, output, session) {
       hr(),
       textInput("election_title", "Election Title", placeholder = "e.g., Annual Board Election"),
       textAreaInput("candidate_names", "Candidate Names (one per line)", rows = 5),
-      numericInput("seats", "Number of Seats to Elect", value = 1, min = 1, step = 1),
+      
+      # <-- CHANGE: Default value for seats is now 3
+      numericInput("seats", "Number of Seats to Elect", value = 3, min = 1, step = 1),
+      
       checkboxInput("allow_incomplete", "Allow incomplete ballots (voters can leave candidates unranked)", value = FALSE),
       checkboxInput("allow_ties", "Allow tied ranks (voters can give the same rank to multiple candidates)", value = FALSE),
       passwordInput("password", "Optional: Set an Admin Password"),
