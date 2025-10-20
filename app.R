@@ -18,6 +18,7 @@ library(jsonlite)
 library(sortable)
 library(dplyr)
 library(vote)
+library(tibble)
 
 # Load the cpo_stv function
 source("cpo_stv.R")
@@ -71,6 +72,9 @@ server <- function(input, output, session) {
   # To store the chosen tabulation method
   tabulation_method <- reactiveVal("cpo_stv")
   
+  # To store the last chosen function from the hub
+  last_function_choice <- reactiveVal("create")
+  
   # -- Dynamic UI Rendering ----------------------------------------------------
   
   output$main_ui <- renderUI({
@@ -105,7 +109,7 @@ server <- function(input, output, session) {
                      choices = c("Create a new election" = "create",
                                  "Submit a ballot" = "ballot",
                                  "Process election results" = "process"),
-                     selected = "create"),
+                     selected = last_function_choice()),
         br(),
         actionButton("go_to_function", "Continue →",
                      class = "btn-primary btn-lg", icon = icon("arrow-right"))
@@ -186,7 +190,7 @@ server <- function(input, output, session) {
       radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
                    choices = c("CPO STV" = "cpo_stv",
                                "Standard STV" = "stv",
-                               "Borda Count" = "borda",
+                               "Borda Scores" = "borda",
                                "Borda with Tiebreakers" = "borda_tb"),
                    selected = "cpo_stv"),
       actionButton("to_process_page_2", "Continue", class = "btn-primary")
@@ -200,7 +204,7 @@ server <- function(input, output, session) {
     method_name <- switch(tabulation_method(),
                           "cpo_stv" = "CPO STV",
                           "stv" = "Standard STV",
-                          "borda" = "Borda Count",
+                          "borda" = "Borda Scores",
                           "borda_tb" = "Borda with Tiebreakers")
     
     fluidPage(
@@ -246,7 +250,8 @@ server <- function(input, output, session) {
       ),
       hr(),
       h4("Results:"),
-      verbatimTextOutput("stv_results"),
+      verbatimTextOutput("text_results"),
+      tableOutput("table_results"),
       
       shinyjs::hidden(
         div(id = "post_processing_ui",
@@ -316,6 +321,7 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$go_to_function, {
+    last_function_choice(input$app_function)
     id <- tolower(trimws(input$election_id))
     if (id == "") {
       showModal(show_error_modal("Election ID cannot be empty."))
@@ -502,7 +508,6 @@ server <- function(input, output, session) {
     shinyjs::delay(1, {
       method <- input$tabulation_method_choice
       
-      # Show/hide options based on the chosen method
       show_seats <- method != "borda"
       show_cpo_ties <- method == "cpo_stv"
       show_borda_tb_ties <- method == "borda_tb"
@@ -515,11 +520,14 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$submit_processing, {
+    output$text_results <- renderPrint({ "" })
+    output$table_results <- renderTable({ NULL })
+    
     election_path <- file.path("Elections", active_election_id())
     ballot_files <- list.files(election_path,
                                pattern = "ballot_.*\\.json", full.names = TRUE)
     if (length(ballot_files) == 0) {
-      output$stv_results <- renderPrint({
+      output$text_results <- renderPrint({
         "No ballots have been submitted for this election."
       })
       return()
@@ -531,12 +539,15 @@ server <- function(input, output, session) {
     })
     ballot_df <- bind_rows(all_ballots)
     
-    results <- tryCatch({
-      capture.output({
+    returned_value <- NULL
+    printed_output <- NULL
+    
+    tryCatch({
+      printed_output <- capture.output({
         method <- tabulation_method()
         verbose_flag <- input$verbose_output
         
-        if (method == "cpo_stv") {
+        returned_value <- if (method == "cpo_stv") {
           cpo_stv(ballot_df, seats = input$process_seats,
                   ties = input$tiebreak_methods_cpo, seed = input$seed,
                   verbose = verbose_flag)
@@ -545,19 +556,30 @@ server <- function(input, output, session) {
                 ties = input$tiebreak_methods_borda_tb, seed = input$seed,
                 verbose = verbose_flag)
         } else if (method == "borda") {
-          borda(ballot_df, seed = input$seed, verbose = verbose_flag)
+          borda(ballot_df, seats = 0, seed = input$seed,
+                verbose = verbose_flag)
         } else { # Standard stv
           stv(ballot_df, nseats = input$process_seats, seed = input$seed,
               verbose = verbose_flag)
         }
       })
     }, error = function(e) {
-      paste("An error occurred during calculation:", e$message)
+      printed_output <<- paste("An error occurred during calculation:", e$message)
     })
     
-    output$stv_results <- renderPrint({
-      cat(paste(results, collapse = "\n"))
+    if (is.data.frame(returned_value) || is_tibble(returned_value)) {
+      output$table_results <- renderTable({ returned_value })
+    } else if (!is.null(returned_value)) {
+      additional_output <- capture.output(print(returned_value))
+      printed_output <- c(printed_output, additional_output)
+    }
+    
+    output$text_results <- renderPrint({
+      if (length(printed_output) > 0) {
+        cat(paste(printed_output, collapse = "\n"))
+      }
     })
+    
     shinyjs::hide("processing_inputs")
     shinyjs::show("post_processing_ui")
   })
@@ -565,15 +587,21 @@ server <- function(input, output, session) {
   # -- End Screen/Return Home Logic -------------------------------------------
   
   reset_to_hub <- function() {
+    last_election_id <- active_election_id()
+    
     active_election_id(NULL)
     election_config(NULL)
     end_screen_message("")
-    shinyjs::reset("election_id")
     shinyjs::show("processing_inputs")
-    output$stv_results <- renderText({ "" })
+    output$text_results <- renderPrint({ "" })
+    output$table_results <- renderTable({ NULL })
     creation_page(1)
     processing_page(1)
     current_ui("hub")
+    
+    shinyjs::delay(1, {
+      updateTextInput(session, "election_id", value = last_election_id)
+    })
   }
   
   observeEvent(input$return_home_from_results, { reset_to_hub() })
