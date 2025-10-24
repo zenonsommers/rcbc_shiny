@@ -1,8 +1,16 @@
 # ==============================================================================
 # Vibe-Coded Shiny Election App
 #
-# To run, follow the instructions in the readme file here:
-# https://github.com/zenonsommers/rcbc_shiny/blob/main/README.md
+# To Run:
+# 1. Install packages:
+#    install.packages(c("bslib", "digest", "dplyr", "forcats", "gtools",
+#    "ggplot2", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny",
+#    "shinyjs", "sortable", "stringi", "tibble", "tidyverse", "uuid", "vote"))
+# 2. Download the latest version of the repo from
+#    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
+#    local directory
+# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
+#    saved the files from the repo.
 # ==============================================================================
 
 # Load necessary libraries
@@ -1139,7 +1147,7 @@ server <- function(input, output, session) {
         return()
       }
     } else {
-      # If no password set, check if user entered anything (they shouldn't have)
+      # If no password set, check if user entered anything
       if(input$delete_password_confirm != "") {
         showModal(show_error_modal("No password is set for this election. Leave field blank."))
         return()
@@ -1151,6 +1159,7 @@ server <- function(input, output, session) {
     tryCatch({
       unlink(election_path, recursive = TRUE, force = TRUE)
       removeModal()
+      last_known_id(NULL) # Clear the last known ID
       end_screen_message(paste("Election", sQuote(active_election_id()),
                                "successfully deleted."))
       current_ui("end")
@@ -1267,15 +1276,16 @@ server <- function(input, output, session) {
   # -- End Screen/Return Home Logic -------------------------------------------
   
   reset_to_hub <- function() {
-    # Get the ID to prefill *before* clearing state
+    # This logic now correctly finds the last ID used,
+    # whether from a successful action (active) or a failed one (known)
     last_id <- active_election_id()
-    
-    # If no ID was active (e.g. error on hub), use the last one we tried
-    if (is.null(last_id)) {
+    if (is.null(last_id) || last_id == "") {
       last_id <- last_known_id()
     }
     
-    active_election_id(NULL)
+    #active_election_id(NULL) # Clear the *active* session
+    last_known_id(last_id) # Persist the last known ID
+    
     election_config(NULL)
     end_screen_message("")
     shinyjs::show("processing_inputs")
