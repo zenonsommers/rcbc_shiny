@@ -3,9 +3,9 @@
 #
 # To Run:
 # 1. Install packages:
-#    install.packages(c("bslib", "digest", "dplyr", "gtools", "jsonlite",
-#    "magrittr", "readxl", "shiny", "shinyjs", "sortable", "stringi",
-#    "tibble", "tidyverse", "uuid", "vote"))
+#    install.packages(c("bslib", "digest", "dplyr", "forcats", "gtools",
+#    "ggplot2", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny",
+#    "shinyjs", "sortable", "stringi", "tibble", "tidyverse", "uuid", "vote"))
 # 2. Download the latest version of the repo from
 #    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
 #    local directory
@@ -24,6 +24,9 @@ library(vote)
 library(tibble)
 library(bslib)
 library(digest)
+library(ggplot2) # Needed for plots
+library(forcats) # Needed for factor levels in plots
+library(RColorBrewer) # For color palettes
 
 # Load the cpo_stv function
 source("cpo_stv.R")
@@ -96,6 +99,12 @@ css_rules <- "
     justify-content: space-between; /* Space out buttons */
     margin-top: 20px;
   }
+  /* Style for plot containers to allow horizontal scroll if needed */
+  .plot-container {
+    overflow-x: auto;
+    overflow-y: hidden; /* Hide vertical scrollbar on container */
+    padding-bottom: 15px; /* Add space for horizontal scrollbar */
+  }
 "
 
 # Conditionally add the sortable style if the flag is TRUE
@@ -106,7 +115,7 @@ if (enable_custom_sortable_style) {
       background-color: var(--bs-tertiary-bg); /* Use a contrast color */
       border: 1px solid var(--bs-border-color); /* Explicitly set border */
       color: var(--bs-body-color); /* Use main text color */
-      
+
       /* Add back structural styles */
       padding: 6px 12px;
       margin-bottom: 4px;
@@ -312,6 +321,12 @@ server <- function(input, output, session) {
             tableOutput("ballot_table_p1")
         )
       ),
+      tags$details(
+        tags$summary("View Preferences by Candidate"),
+        div(class = "plot-container", # Add class for scrolling
+            uiOutput("candidate_pref_plots_p1")
+        )
+      ),
       hr(),
       radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
                    choices = c("CPO-STV" = "cpo_stv",
@@ -349,6 +364,12 @@ server <- function(input, output, session) {
         tags$summary("View Recorded Ballots"),
         div(style = "max-height: 300px; overflow-y: auto;",
             tableOutput("ballot_table_p2")
+        )
+      ),
+      tags$details(
+        tags$summary("View Preferences by Candidate"),
+        div(class = "plot-container", # Add class for scrolling
+            uiOutput("candidate_pref_plots_p2")
         )
       ),
       br(),
@@ -486,7 +507,7 @@ server <- function(input, output, session) {
   # -- Helper Reactive for Ballot Data -----------------------------------------
   
   ballot_data_reactive <- reactive({
-    req(active_election_id())
+    req(active_election_id(), election_config())
     election_path <- file.path("Elections", active_election_id())
     ballot_files <- list.files(election_path,
                                pattern = "ballot_.*\\.json", full.names = TRUE)
@@ -495,36 +516,57 @@ server <- function(input, output, session) {
       return(NULL)
     }
     
-    all_ballots <- lapply(ballot_files, function(f) {
-      ballot <- tryCatch(fromJSON(f), error = function(e) NULL)
-      if (is.null(ballot)) return(NULL) # Skip corrupted files
-      ballot[ballot == 0] <- NA # Convert 0 to NA
-      config_candidates <- election_config()$candidates
-      # Ensure all expected columns exist, fill with NA if missing
-      missing_cols <- setdiff(config_candidates, names(ballot))
-      if (length(missing_cols) > 0) {
-        ballot[missing_cols] <- NA
+    config_candidates <- election_config()$candidates
+    if(is.null(config_candidates)) return(NULL) # Ensure candidates are loaded
+    
+    all_ballots_list <- lapply(ballot_files, function(f) {
+      ballot_list <- tryCatch(fromJSON(f), error = function(e) {
+        warning(paste("Could not read or parse ballot file:", f, "-", e$message))
+        NULL
+      })
+      if (is.null(ballot_list)) return(NULL) # Skip corrupted/unreadable files
+      
+      # Convert ballot values to numeric, coercing errors to NA
+      # and ensure names match config_candidates
+      processed_ballot <- vector("list", length(config_candidates))
+      names(processed_ballot) <- config_candidates
+      
+      for (cand in config_candidates) {
+        val <- ballot_list[[cand]] # Access by name
+        if (is.null(val)) {
+          processed_ballot[[cand]] <- NA_real_ # Use NA_real_ for numeric NA
+        } else {
+          num_val <- suppressWarnings(as.numeric(val))
+          # Set ranks outside valid range or non-numeric/zero to NA
+          if (is.na(num_val) || num_val == 0 || num_val < 1 || num_val > length(config_candidates)) {
+            processed_ballot[[cand]] <- NA_real_
+          } else {
+            processed_ballot[[cand]] <- num_val
+          }
+        }
       }
-      # Convert to named list before creating data frame row
-      ordered_ballot_list <- ballot[config_candidates] 
-      # Convert list to data frame row explicitly
-      return(as.data.frame(ordered_ballot_list)) 
+      return(processed_ballot) # Return the processed list
     })
     
     # Filter out NULLs from failed reads
-    all_ballots_valid <- Filter(Negate(is.null), all_ballots)
-    if (length(all_ballots_valid) == 0) return(NULL)
+    all_ballots_valid_lists <- Filter(Negate(is.null), all_ballots_list)
+    if (length(all_ballots_valid_lists) == 0) return(NULL)
     
-    # Use bind_rows for safe combination
-    combined_df <- bind_rows(all_ballots_valid)
+    # Convert the list of lists to a data frame
+    combined_df <- tryCatch(bind_rows(all_ballots_valid_lists), error = function(e){
+      warning(paste("Error combining ballots:", e$message))
+      NULL # Return NULL if bind_rows fails
+    })
+    
     return(combined_df)
   })
+  
   
   # -- Output Renderers for Ballot Count and Table -----------------------------
   
   output$ballot_count_p1 <- renderText({
     df <- ballot_data_reactive()
-    count <- if (is.null(df)) 0 else nrow(df)
+    count <- if (is.null(df) || !is.data.frame(df)) 0 else nrow(df)
     paste("Number of ballots recorded:", count)
   })
   
@@ -534,13 +576,139 @@ server <- function(input, output, session) {
   
   output$ballot_count_p2 <- renderText({
     df <- ballot_data_reactive()
-    count <- if (is.null(df)) 0 else nrow(df)
+    count <- if (is.null(df) || !is.data.frame(df)) 0 else nrow(df)
     paste("Number of ballots recorded:", count)
   })
   
   output$ballot_table_p2 <- renderTable({
     ballot_data_reactive()
   }, na = "Unranked", rownames = TRUE)
+  
+  # -- Output Renderers for Candidate Preference Plots -------------------------
+  
+  observe({
+    req(election_config(), ballot_data_reactive())
+    ballot_df <- ballot_data_reactive()
+    candidates <- election_config()$candidates
+    num_candidates <- length(candidates)
+    
+    if (is.null(ballot_df) || nrow(ballot_df) == 0 || ncol(ballot_df) == 0) {
+      output$candidate_pref_plots_p1 <- renderUI({ p("No valid ballots recorded yet.") })
+      output$candidate_pref_plots_p2 <- renderUI({ p("No valid ballots recorded yet.") })
+      return()
+    }
+    
+    # Define a color palette
+    max_ranks <- num_candidates
+    # Use a colorblind-friendly palette if possible, cycle if needed
+    palette_name <- "Paired" # Good for distinct categories
+    num_colors_needed <- max_ranks
+    # RColorBrewer palettes have max limits (e.g., Paired has 12)
+    if (num_colors_needed <= 12) {
+      rank_colors <- brewer.pal(max(3, num_colors_needed), palette_name)[1:num_colors_needed]
+    } else {
+      # Fallback or cycle colors if more ranks than palette colors
+      rank_colors <- colorRampPalette(brewer.pal(12, palette_name))(num_colors_needed)
+    }
+    # Create a named vector for scale_fill_manual
+    names(rank_colors) <- as.character(1:max_ranks)
+    
+    
+    lapply(candidates, function(cand) {
+      output_name <- paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand))
+      
+      output[[output_name]] <- renderPlot({
+        current_ballot_df <- ballot_data_reactive()
+        if (!cand %in% names(current_ballot_df)) {
+          return(ggplot() + labs(title = cand) + annotate("text", x=1, y=1, label="Data error: Candidate column missing"))
+        }
+        
+        ranks <- current_ballot_df[[cand]][!is.na(current_ballot_df[[cand]])]
+        
+        if (length(ranks) == 0) {
+          # Empty plot for no ranks
+          ggplot() +
+            labs(title = cand, x = "Rank", y = "Number of Ballots") +
+            scale_x_continuous(breaks = 1:num_candidates,
+                               limits = c(0.5, num_candidates + 0.5)) +
+            theme_minimal(base_size = 10) +
+            theme(plot.title = element_text(hjust = 0.5),
+                  panel.background = element_rect(fill = "transparent", colour = NA),
+                  plot.background = element_rect(fill = "transparent", colour = NA)
+            ) +
+            annotate("text", x = (num_candidates + 1) / 2, y = 0,
+                     label = "No ranks received", hjust = 0.5, vjust = 0,
+                     color = ifelse(is_dark(), "white", "black"))
+        } else {
+          # Plotting logic for candidates with ranks
+          rank_factor <- factor(ranks, levels = 1:num_candidates)
+          rank_counts <- table(rank_factor)
+          plot_data <- data.frame(
+            Rank = factor(names(rank_counts), levels = 1:num_candidates),
+            Count = as.integer(rank_counts)
+          )
+          
+          ggplot(plot_data, aes(x = Rank, y = Count, fill = Rank)) +
+            geom_bar(stat = "identity") +
+            scale_fill_manual(values = rank_colors, drop = FALSE, # Assign colors
+                              name = "Rank") +
+            labs(title = cand, x = "Rank", y = "Number of Ballots") +
+            theme_minimal(base_size = 10) +
+            theme(axis.text.x = element_text(angle = 0),
+                  plot.title = element_text(hjust = 0.5),
+                  panel.background = element_rect(fill = "transparent", colour = NA),
+                  plot.background = element_rect(fill = "transparent", colour = NA),
+                  axis.text = element_text(color = ifelse(is_dark(), "white", "black")),
+                  axis.title = element_text(color = ifelse(is_dark(), "white", "black")),
+                  title = element_text(color = ifelse(is_dark(), "white", "black")),
+                  legend.position = "none" # Hide legend as colors match x-axis
+            ) +
+            scale_x_discrete(drop = FALSE) +
+            scale_y_continuous(
+              limits = c(0, NA),
+              breaks = scales::pretty_breaks(
+                n = max(3, max(plot_data$Count, na.rm = TRUE), na.rm = TRUE)
+              )
+            )
+        }
+      }, bg="transparent")
+    })
+    
+    # Generate the UI placeholders for the plots
+    output$candidate_pref_plots_p1 <- renderUI({
+      req(election_config())
+      candidates <- election_config()$candidates
+      num_candidates <- length(candidates)
+      # Calculate width: approx 25px per bar + 60px padding/axis labels
+      plot_width <- max(200, num_candidates * 25 + 60)
+      
+      plot_output_list <- lapply(candidates, function(cand) {
+        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+                   height = "250px", width = paste0(plot_width, "px"))
+      })
+      # Wrap plots in a div container for potential horizontal scrolling
+      div(style="display: flex; flex-wrap: wrap; gap: 10px;",
+          plot_output_list)
+    })
+    
+    output$candidate_pref_plots_p2 <- renderUI({
+      req(election_config())
+      candidates <- election_config()$candidates
+      num_candidates <- length(candidates)
+      # Calculate width: approx 25px per bar + 60px padding/axis labels
+      plot_width <- max(200, num_candidates * 25 + 60)
+      
+      plot_output_list <- lapply(candidates, function(cand) {
+        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+                   height = "250px", width = paste0(plot_width, "px"))
+      })
+      # Wrap plots in a div container for potential horizontal scrolling
+      div(style="display: flex; flex-wrap: wrap; gap: 10px;",
+          plot_output_list)
+    })
+    
+  })
+  
   
   # -- Hub Logic ---------------------------------------------------------------
   
@@ -681,7 +849,7 @@ server <- function(input, output, session) {
                 "Please check file format and ensure ranks are numeric.")
         ))
         reset("ballot_file")
-        candidate_names_from_csv <<- "" 
+        candidate_names_from_csv <<- ""
       })
     }
     creation_page(2)
@@ -729,7 +897,7 @@ server <- function(input, output, session) {
         csv_candidates <- colnames(processed_df)
         if(!identical(candidates, csv_candidates)){
           if(setequal(candidates, csv_candidates)){
-            processed_df <- processed_df[, candidates] 
+            processed_df <- processed_df[, candidates]
             warning("CSV columns reordered to match candidate list.")
           } else {
             stop("Candidate list derived from CSV does not match final list.")
@@ -738,19 +906,19 @@ server <- function(input, output, session) {
         
         for (i in 1:nrow(processed_df)) {
           ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
-          ballot_data <- lapply(ballot_data, 
+          ballot_data <- lapply(ballot_data,
                                 function(x) if(is.numeric(x)) x else NA)
           ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
           write_json(ballot_data,
                      file.path(election_path, ballot_filename),
-                     auto_unbox = TRUE, na = "null") 
+                     auto_unbox = TRUE, na = "null")
         }
       }, error = function(e) {
         unlink(election_path, recursive = TRUE)
         showModal(show_error_modal(
           paste("Error processing CSV for ballot creation:", e$message)
         ))
-        return() 
+        return()
       })
     }
     end_screen_message(paste("Successfully created election:",
@@ -870,11 +1038,11 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$accepting_responses, {
-    if(is.null(election_config())) return() 
+    if(is.null(election_config())) return()
     
     config <- election_config()
     config$accepting_responses <- input$accepting_responses
-    election_config(config) 
+    election_config(config)
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
     tryCatch({
@@ -886,7 +1054,7 @@ server <- function(input, output, session) {
     }, error = function(e){
       showModal(show_error_modal(paste("Failed to update config file:", e$message)))
     })
-  }, ignoreInit = TRUE) 
+  }, ignoreInit = TRUE)
   
   observeEvent(input$change_password, {
     config <- election_config()
@@ -915,7 +1083,7 @@ server <- function(input, output, session) {
     config$password_hash <- if (input$new_password != "") {
       digest(input$new_password, "sha256")
     } else { NULL }
-    election_config(config) 
+    election_config(config)
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
     tryCatch({
@@ -955,7 +1123,7 @@ server <- function(input, output, session) {
     output$text_results <- renderPrint({ "" })
     output$table_results <- renderTable({ NULL })
     
-    ballot_df <- ballot_data_reactive() 
+    ballot_df <- ballot_data_reactive()
     
     if (is.null(ballot_df)) {
       output$text_results <- renderPrint({
@@ -996,7 +1164,7 @@ server <- function(input, output, session) {
         config <- election_config()
         # Note: Base stv function doesn't have explicit verbose, relies on print
         stv(ballot_df, nseats = input$process_seats,
-            seed = current_seed, 
+            seed = current_seed,
             equal.ranking = config$allow_ties)
       }
       

@@ -4,7 +4,7 @@ A Shiny app for configuring, administering, and tabulating multi-winner ranked c
 To use:
 1. Download the repository and extract the files into a local directory.
 2. Open `RCBC Shiny Voting Suite.Rproj` in [RStudio](https://posit.co/download/rstudio-desktop/).
-3. Run the following command in the RStudio console to install the required dependencies: `install.packages(c("bslib", "digest", "dplyr", "gtools", "jsonlite", "magrittr", "readxl", "shiny", "shinyjs", "sortable", "stringi", "tidyverse", "uuid", "vote"))`
+3. Run the following command in the RStudio console to install the required dependencies: `install.packages(c("bslib", "digest", "dplyr", "gtools", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny", "shinyjs", "sortable", "stringi", "tidyverse", "uuid", "vote"))`
 4. Run `shiny::runApp()` in the RStudio console.
 # Supported Methods
 Currently, the suite supports the following election methods:
