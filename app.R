@@ -1,16 +1,8 @@
 # ==============================================================================
 # Vibe-Coded Shiny Election App
 #
-# To Run:
-# 1. Install packages:
-#    install.packages(c("bslib", "digest", "dplyr", "forcats", "gtools",
-#    "ggplot2", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny",
-#    "shinyjs", "sortable", "stringi", "tibble", "tidyverse", "uuid", "vote"))
-# 2. Download the latest version of the repo from
-#    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
-#    local directory
-# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
-#    saved the files from the repo.
+# To run, follow the instructions in the readme file here:
+# https://github.com/zenonsommers/rcbc_shiny/blob/main/README.md
 # ==============================================================================
 
 # Load necessary libraries
@@ -163,6 +155,7 @@ server <- function(input, output, session) {
   
   current_ui <- reactiveVal("hub")
   active_election_id <- reactiveVal(NULL)
+  last_known_id <- reactiveVal(NULL) # <-- STORES LAST ENTERED ID
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
   initial_ballot_order <- reactiveVal(NULL)
@@ -776,10 +769,15 @@ server <- function(input, output, session) {
   observeEvent(input$go_to_function, {
     last_function_choice(input$app_function)
     id <- tolower(trimws(input$election_id))
+    
     if (id == "") {
       showModal(show_error_modal("Election ID cannot be empty."))
       return()
     }
+    
+    # Set the 'last_known_id' immediately, so we can return to it.
+    last_known_id(id) 
+    
     election_path <- file.path("Elections", id)
     config_path <- file.path(election_path, "config.json")
     
@@ -821,7 +819,7 @@ server <- function(input, output, session) {
       }
       
       election_config(config)
-      active_election_id(id)
+      active_election_id(id) # Set active ID only on successful load
       
       if (input$app_function == "edit") {
         if (!is.null(config$password_hash) && config$password_hash != "") {
@@ -838,8 +836,9 @@ server <- function(input, output, session) {
         showModal(show_error_modal(
           "An election with this ID already exists. Please choose another."
         ))
+        return()
       } else {
-        active_election_id(id)
+        active_election_id(id) # Set active ID on successful create nav
         current_ui("create")
       }
     }
@@ -1127,12 +1126,13 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$confirm_delete, {
-    req(input$delete_password_confirm)
     config <- election_config()
     
     # Check if password is required and correct
     password_required <- !is.null(config$password_hash) && config$password_hash != ""
     if(password_required) {
+      # Require password entry even to check
+      req(input$delete_password_confirm) 
       hashed_input <- digest(input$delete_password_confirm, "sha256")
       if (hashed_input != config$password_hash) {
         showModal(show_error_modal("Incorrect password. Deletion cancelled."))
@@ -1225,8 +1225,9 @@ server <- function(input, output, session) {
               verbose = verbose_flag)
       } else { # Standard stv
         config <- election_config()
+        # Pass verbose flag to base stv function
         stv(ballot_df, nseats = input$process_seats,
-            verbose = verbose_flag, seed = current_seed,
+            seed = current_seed, verbose = verbose_flag,
             equal.ranking = config$allow_ties)
       }
       
@@ -1266,7 +1267,13 @@ server <- function(input, output, session) {
   # -- End Screen/Return Home Logic -------------------------------------------
   
   reset_to_hub <- function() {
-    last_election_id <- active_election_id()
+    # Get the ID to prefill *before* clearing state
+    last_id <- active_election_id()
+    
+    # If no ID was active (e.g. error on hub), use the last one we tried
+    if (is.null(last_id)) {
+      last_id <- last_known_id()
+    }
     
     active_election_id(NULL)
     election_config(NULL)
@@ -1280,7 +1287,7 @@ server <- function(input, output, session) {
     current_ui("hub")
     
     shinyjs::delay(1, {
-      updateTextInput(session, "election_id", value = last_election_id)
+      updateTextInput(session, "election_id", value = last_id)
     })
   }
   
