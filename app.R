@@ -91,6 +91,11 @@ css_rules <- "
     border-radius: var(--bs-border-radius);
     background-color: var(--bs-tertiary-bg);
   }
+  .footer-buttons { /* Container for footer buttons */
+    display: flex;
+    justify-content: space-between; /* Space out buttons */
+    margin-top: 20px;
+  }
 "
 
 # Conditionally add the sortable style if the flag is TRUE
@@ -234,8 +239,12 @@ server <- function(input, output, session) {
       fileInput("ballot_file", "Optional: Upload CSV to Pre-fill Ballots",
                 accept = c("text/csv",
                            "text/comma-separated-values,text/plain", ".csv")),
-      actionButton("to_create_page_2", "Continue to Details",
-                   class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("to_create_page_2", "Continue to Details",
+                       class = "btn-primary")
+      )
     )
   }
   
@@ -256,8 +265,12 @@ server <- function(input, output, session) {
       checkboxInput("allow_ties", "Allow tied ranks", value = FALSE),
       passwordInput("password", "Optional: Set an Admin Password"),
       hr(),
-      actionButton("submit_creation", "Create Election",
-                   class = "btn-success", icon = icon("check"))
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_creation", "Create Election",
+                       class = "btn-success", icon = icon("check"))
+      )
     )
   }
   
@@ -270,8 +283,12 @@ server <- function(input, output, session) {
       hr(),
       uiOutput("ballot_interface"),
       hr(),
-      actionButton("submit_ballot", "Submit Ballot",
-                   class = "btn-success", icon = icon("person-booth"))
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_ballot", "Submit Ballot",
+                       class = "btn-success", icon = icon("person-booth"))
+      )
     )
   }
   
@@ -302,7 +319,11 @@ server <- function(input, output, session) {
                                "Borda Scores" = "borda",
                                "Borda with Tiebreakers" = "borda_tb"),
                    selected = "cpo_stv"),
-      actionButton("to_process_page_2", "Continue", class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("to_process_page_2", "Continue", class = "btn-primary")
+      )
     )
   }
   
@@ -365,8 +386,12 @@ server <- function(input, output, session) {
           checkboxInput("verbose_output", "Show verbose output",
                         value = FALSE),
           
-          actionButton("submit_processing", "Process Results",
-                       class = "btn-info", icon = icon("calculator"))
+          div(class = "footer-buttons",
+              actionButton("return_home_general", "Return to Home",
+                           class="btn-secondary"),
+              actionButton("submit_processing", "Process Results",
+                           class = "btn-info", icon = icon("calculator"))
+          )
       ),
       hr(),
       h4("Results:"),
@@ -374,9 +399,10 @@ server <- function(input, output, session) {
       tableOutput("table_results"),
       
       shinyjs::hidden(
-        div(id = "post_processing_ui",
-            br(),
-            actionButton("return_home_from_results", "Return to Home",
+        div(id = "post_processing_ui", class = "footer-buttons",
+            # Buttons are already spaced due to footer-buttons class
+            span(), # Pushes button right
+            actionButton("return_home_general", "Return to Home",
                          class = "btn-primary", icon = icon("home"))
         )
       )
@@ -393,7 +419,11 @@ server <- function(input, output, session) {
       p("This election is password-protected. Please enter the admin password."),
       hr(),
       passwordInput("admin_password_check", "Admin Password"),
-      actionButton("submit_password_check", "Submit", class = "btn-primary"),
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_password_check", "Submit", class = "btn-primary")
+      ),
       # Ensure keypress listener is removed before adding a new one
       shinyjs::runjs("
         $(document).off('keypress', '#admin_password_check').on('keypress', '#admin_password_check', function(e) {
@@ -434,8 +464,11 @@ server <- function(input, output, session) {
       ),
       
       br(),
-      actionButton("return_home_from_edit", "Return to Home",
-                   class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          span() # Placeholder for spacing if needed later
+      )
     )
   }
   
@@ -445,8 +478,8 @@ server <- function(input, output, session) {
       hr(),
       p(end_screen_message()),
       br(),
-      actionButton("return_home", "Return to Home", class = "btn-primary",
-                   icon = icon("home"))
+      actionButton("return_home_general", "Return to Home",
+                   class = "btn-primary", icon = icon("home"))
     )
   }
   
@@ -463,16 +496,27 @@ server <- function(input, output, session) {
     }
     
     all_ballots <- lapply(ballot_files, function(f) {
-      ballot <- fromJSON(f)
-      ballot[ballot == 0] <- NA # Convert 0 to NA for potential analysis
-      # Ensure consistent column order based on config
+      ballot <- tryCatch(fromJSON(f), error = function(e) NULL)
+      if (is.null(ballot)) return(NULL) # Skip corrupted files
+      ballot[ballot == 0] <- NA # Convert 0 to NA
       config_candidates <- election_config()$candidates
-      ordered_ballot <- ballot[config_candidates]
-      return(as.data.frame(ordered_ballot))
+      # Ensure all expected columns exist, fill with NA if missing
+      missing_cols <- setdiff(config_candidates, names(ballot))
+      if (length(missing_cols) > 0) {
+        ballot[missing_cols] <- NA
+      }
+      # Convert to named list before creating data frame row
+      ordered_ballot_list <- ballot[config_candidates] 
+      # Convert list to data frame row explicitly
+      return(as.data.frame(ordered_ballot_list)) 
     })
     
+    # Filter out NULLs from failed reads
+    all_ballots_valid <- Filter(Negate(is.null), all_ballots)
+    if (length(all_ballots_valid) == 0) return(NULL)
+    
     # Use bind_rows for safe combination
-    combined_df <- bind_rows(all_ballots)
+    combined_df <- bind_rows(all_ballots_valid)
     return(combined_df)
   })
   
@@ -486,7 +530,7 @@ server <- function(input, output, session) {
   
   output$ballot_table_p1 <- renderTable({
     ballot_data_reactive()
-  }, na = "Unranked")
+  }, na = "Unranked", rownames = TRUE)
   
   output$ballot_count_p2 <- renderText({
     df <- ballot_data_reactive()
@@ -496,7 +540,7 @@ server <- function(input, output, session) {
   
   output$ballot_table_p2 <- renderTable({
     ballot_data_reactive()
-  }, na = "Unranked")
+  }, na = "Unranked", rownames = TRUE)
   
   # -- Hub Logic ---------------------------------------------------------------
   
@@ -563,10 +607,14 @@ server <- function(input, output, session) {
         return()
       }
       
-      config <- fromJSON(config_path)
+      config <- tryCatch(fromJSON(config_path), error = function(e) {
+        showModal(show_error_modal(paste("Error reading config file:", e$message)))
+        return(NULL)
+      })
+      if(is.null(config)) return()
       
       if (input$app_function == "ballot") {
-        # Default to TRUE if missing, for backwards compatibility
+        # Default to TRUE if missing
         if (is.null(config$accepting_responses)) config$accepting_responses <- TRUE
         if (!config$accepting_responses) {
           showModal(show_error_modal(
@@ -579,7 +627,12 @@ server <- function(input, output, session) {
       if (input$app_function == "edit") {
         if (is.null(config$accepting_responses)) {
           config$accepting_responses <- TRUE
-          write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+          tryCatch(
+            write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE),
+            error = function(e) {
+              showModal(show_error_modal("Could not update config file."))
+            }
+          )
         }
       }
       
@@ -627,8 +680,8 @@ server <- function(input, output, session) {
           paste("Error processing CSV:", e$message,
                 "Please check file format and ensure ranks are numeric.")
         ))
-        # Reset file input if processing fails
         reset("ballot_file")
+        candidate_names_from_csv <<- "" 
       })
     }
     creation_page(2)
@@ -673,26 +726,31 @@ server <- function(input, output, session) {
         ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
         processed_df <- ballot_df %>% select(where(is.numeric)) %>%
           removeQuestion()
-        # Ensure the candidate list used here matches the one derived earlier
         csv_candidates <- colnames(processed_df)
-        if(!identical(candidates, csv_candidates)) {
-          stop("Candidate list mismatch after processing CSV again.")
+        if(!identical(candidates, csv_candidates)){
+          if(setequal(candidates, csv_candidates)){
+            processed_df <- processed_df[, candidates] 
+            warning("CSV columns reordered to match candidate list.")
+          } else {
+            stop("Candidate list derived from CSV does not match final list.")
+          }
         }
         
         for (i in 1:nrow(processed_df)) {
           ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
+          ballot_data <- lapply(ballot_data, 
+                                function(x) if(is.numeric(x)) x else NA)
           ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
           write_json(ballot_data,
                      file.path(election_path, ballot_filename),
-                     auto_unbox = TRUE)
+                     auto_unbox = TRUE, na = "null") 
         }
       }, error = function(e) {
-        # Clean up created directory if ballot writing fails
         unlink(election_path, recursive = TRUE)
         showModal(show_error_modal(
           paste("Error processing CSV for ballot creation:", e$message)
         ))
-        return() # Stop execution
+        return() 
       })
     }
     end_screen_message(paste("Successfully created election:",
@@ -764,7 +822,7 @@ server <- function(input, output, session) {
     ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
     election_path <- file.path("Elections", active_election_id())
     write_json(ballot_data, file.path(election_path, ballot_filename),
-               auto_unbox = TRUE)
+               auto_unbox = TRUE, na = "null") # Ensure NAs are handled
     end_screen_message("Your ballot has been successfully submitted.")
     current_ui("end")
   }
@@ -812,12 +870,11 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$accepting_responses, {
-    # Ensure config is loaded if the observer is triggered standalone
     if(is.null(election_config())) return() 
     
     config <- election_config()
     config$accepting_responses <- input$accepting_responses
-    election_config(config) # Update reactive value
+    election_config(config) 
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
     tryCatch({
@@ -829,18 +886,16 @@ server <- function(input, output, session) {
     }, error = function(e){
       showModal(show_error_modal(paste("Failed to update config file:", e$message)))
     })
-  }, ignoreInit = TRUE) # ignoreInit prevents running when the UI is first built
+  }, ignoreInit = TRUE) 
   
   observeEvent(input$change_password, {
     config <- election_config()
     
-    # Validation checks
     if (input$new_password != input$confirm_new_password) {
       showModal(show_error_modal("New passwords do not match."))
       return()
     }
     
-    # Check old password if one is set
     has_old_pass <- !is.null(config$password_hash) && config$password_hash != ""
     if (has_old_pass) {
       hashed_old_pass <- digest(input$old_password, "sha256")
@@ -857,17 +912,15 @@ server <- function(input, output, session) {
       }
     }
     
-    # Update and save password
     config$password_hash <- if (input$new_password != "") {
       digest(input$new_password, "sha256")
     } else { NULL }
-    election_config(config) # Update reactive value
+    election_config(config) 
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
     tryCatch({
       write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
       show_success_modal("Password updated successfully.")
-      # Clear password fields after success
       updateTextInput(session, "old_password", value = "")
       updateTextInput(session, "new_password", value = "")
       updateTextInput(session, "confirm_new_password", value = "")
@@ -902,60 +955,72 @@ server <- function(input, output, session) {
     output$text_results <- renderPrint({ "" })
     output$table_results <- renderTable({ NULL })
     
-    election_path <- file.path("Elections", active_election_id())
-    ballot_files <- list.files(election_path,
-                               pattern = "ballot_.*\\.json", full.names = TRUE)
-    if (length(ballot_files) == 0) {
+    ballot_df <- ballot_data_reactive() 
+    
+    if (is.null(ballot_df)) {
       output$text_results <- renderPrint({
-        "No ballots have been submitted for this election."
+        "No ballots found or error reading ballots for this election."
       })
       return()
     }
-    all_ballots <- lapply(ballot_files, function(f) {
-      ballot <- fromJSON(f)
-      ballot[ballot == 0] <- NA
-      # Ensure consistent column order based on config
-      config_candidates <- election_config()$candidates
-      ordered_ballot <- ballot[config_candidates]
-      return(as.data.frame(ordered_ballot))
-    })
-    ballot_df <- bind_rows(all_ballots)
     
     returned_value <- NULL
     printed_output <- NULL
     
     tryCatch({
-      printed_output <- capture.output({
-        method <- tabulation_method()
-        verbose_flag <- input$verbose_output
-        
-        returned_value <- if (method == "cpo_stv") {
-          cpo_stv(ballot_df, seats = input$process_seats,
-                  ties = input$tiebreak_methods_cpo, seed = input$seed,
-                  verbose = verbose_flag)
-        } else if (method == "borda_tb") {
-          borda(ballot_df, seats = input$process_seats,
-                ties = input$tiebreak_methods_borda_tb, seed = input$seed,
+      # Use sink to capture all output, including direct prints and messages
+      output_con <- textConnection("printed_output", "w", local = TRUE)
+      sink(output_con, type = "output")
+      sink(output_con, type = "message")
+      
+      method <- tabulation_method()
+      verbose_flag <- input$verbose_output
+      
+      current_seed <- if(method == "borda") default_seed else input$seed
+      if(is.na(current_seed) || is.null(current_seed)){
+        current_seed <- default_seed
+      }
+      
+      returned_value <- if (method == "cpo_stv") {
+        cpo_stv(ballot_df, seats = input$process_seats,
+                ties = input$tiebreak_methods_cpo, seed = current_seed,
                 verbose = verbose_flag)
-        } else if (method == "borda") {
-          borda(ballot_df, seats = 0, seed = input$seed, # Pass seed even if unused
-                verbose = verbose_flag)
-        } else { # Standard stv
-          config <- election_config()
-          stv(ballot_df, nseats = input$process_seats,
-              seed = input$seed, verbose = verbose_flag,
-              equal.ranking = config$allow_ties)
-        }
-      })
+      } else if (method == "borda_tb") {
+        borda(ballot_df, seats = input$process_seats,
+              ties = input$tiebreak_methods_borda_tb, seed = current_seed,
+              verbose = verbose_flag)
+      } else if (method == "borda") {
+        borda(ballot_df, seats = 0, seed = current_seed,
+              verbose = verbose_flag)
+      } else { # Standard stv
+        config <- election_config()
+        # Note: Base stv function doesn't have explicit verbose, relies on print
+        stv(ballot_df, nseats = input$process_seats,
+            seed = current_seed, 
+            equal.ranking = config$allow_ties)
+      }
+      
+      # Close connections
+      sink(type = "message"); sink(type = "output")
+      close(output_con)
+      
     }, error = function(e) {
+      # Ensure sinks are closed on error too
+      if(sink.number(type="message") > 0) sink(type="message")
+      if(sink.number(type="output") > 0) sink(type="output")
+      if(exists("output_con") && isOpen(output_con)) close(output_con)
+      
       printed_output <<- paste("An error occurred during calculation:", e$message)
+      returned_value <<- NULL # Ensure no table is shown on error
     })
     
     if (is.data.frame(returned_value) || is_tibble(returned_value)) {
       output$table_results <- renderTable({ returned_value })
     } else if (!is.null(returned_value)) {
+      # Capture the print output of non-data frame results
       additional_output <- capture.output(print(returned_value))
-      printed_output <- c(printed_output, additional_output)
+      # Prepend additional output to the captured console output
+      printed_output <- c(additional_output, printed_output)
     }
     
     output$text_results <- renderPrint({
@@ -989,9 +1054,7 @@ server <- function(input, output, session) {
     })
   }
   
-  observeEvent(input$return_home_from_results, { reset_to_hub() })
-  observeEvent(input$return_home, { reset_to_hub() })
-  observeEvent(input$return_home_from_edit, { reset_to_hub() })
+  observeEvent(input$return_home_general, { reset_to_hub() })
   
 }
 
