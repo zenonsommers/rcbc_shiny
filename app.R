@@ -1,16 +1,8 @@
 # ==============================================================================
 # Vibe-Coded Shiny Election App
 #
-# To Run:
-# 1. Install packages:
-#    install.packages(c("bslib", "digest", "dplyr", "gtools", "jsonlite",
-#    "magrittr", "readxl", "shiny", "shinyjs", "sortable", "stringi",
-#    "tibble", "tidyverse", "uuid", "vote"))
-# 2. Download the latest version of the repo from
-#    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
-#    local directory
-# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
-#    saved the files from the repo.
+# To run, follow the instructions in the readme file:
+# https://github.com/zenonsommers/rcbc_shiny/blob/main/README.md
 # ==============================================================================
 
 # Load necessary libraries
@@ -24,6 +16,9 @@ library(vote)
 library(tibble)
 library(bslib)
 library(digest)
+library(ggplot2)
+library(forcats)
+library(RColorBrewer)
 
 # Load the cpo_stv function
 source("cpo_stv.R")
@@ -75,9 +70,42 @@ theme <- bs_theme(version = 5, base_font = font_google("Inter"),
 css_rules <- "
   body {
     padding-top: 5px;
+    padding-bottom: 10px; /* Add padding to the bottom */
   }
   #darkModeToggle {
     color: var(--bs-body-color);
+  }
+  /* Style for details/summary collapsible element */
+  details > summary {
+    cursor: pointer;
+    font-weight: bold;
+    margin-bottom: 5px;
+  }
+  details > div {
+    padding: 10px;
+    border: 1px solid var(--bs-border-color);
+    border-radius: var(--bs-border-radius);
+    background-color: var(--bs-tertiary-bg);
+  }
+  .footer-buttons { /* Container for footer buttons */
+    display: flex;
+    justify-content: space-between; /* Space out buttons */
+    margin-top: 20px;
+  }
+  /* Style for plot containers to allow horizontal scroll if needed */
+  .plot-container {
+    overflow-x: auto;
+    overflow-y: hidden; /* Hide vertical scrollbar on container */
+    padding-bottom: 15px; /* Add space for horizontal scrollbar */
+  }
+  /* Ensure modal content respects theme */
+  .modal-body {
+    color: var(--bs-body-color);
+  }
+  #delete_password_confirm {
+     background-color: var(--bs-input-bg);
+     color: var(--bs-body-color);
+     border-color: var(--bs-input-border-color);
   }
 "
 
@@ -89,7 +117,7 @@ if (enable_custom_sortable_style) {
       background-color: var(--bs-tertiary-bg); /* Use a contrast color */
       border: 1px solid var(--bs-border-color); /* Explicitly set border */
       color: var(--bs-body-color); /* Use main text color */
-      
+
       /* Add back structural styles */
       padding: 6px 12px;
       margin-bottom: 4px;
@@ -127,6 +155,7 @@ server <- function(input, output, session) {
   
   current_ui <- reactiveVal("hub")
   active_election_id <- reactiveVal(NULL)
+  last_known_id <- reactiveVal(NULL) # <-- STORES LAST ENTERED ID
   election_config <- reactiveVal(NULL)
   end_screen_message <- reactiveVal("")
   initial_ballot_order <- reactiveVal(NULL)
@@ -222,8 +251,12 @@ server <- function(input, output, session) {
       fileInput("ballot_file", "Optional: Upload CSV to Pre-fill Ballots",
                 accept = c("text/csv",
                            "text/comma-separated-values,text/plain", ".csv")),
-      actionButton("to_create_page_2", "Continue to Details",
-                   class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("to_create_page_2", "Continue to Details",
+                       class = "btn-primary")
+      )
     )
   }
   
@@ -244,8 +277,12 @@ server <- function(input, output, session) {
       checkboxInput("allow_ties", "Allow tied ranks", value = FALSE),
       passwordInput("password", "Optional: Set an Admin Password"),
       hr(),
-      actionButton("submit_creation", "Create Election",
-                   class = "btn-success", icon = icon("check"))
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_creation", "Create Election",
+                       class = "btn-success", icon = icon("check"))
+      )
     )
   }
   
@@ -258,8 +295,12 @@ server <- function(input, output, session) {
       hr(),
       uiOutput("ballot_interface"),
       hr(),
-      actionButton("submit_ballot", "Submit Ballot",
-                   class = "btn-success", icon = icon("person-booth"))
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_ballot", "Submit Ballot",
+                       class = "btn-success", icon = icon("person-booth"))
+      )
     )
   }
   
@@ -276,6 +317,19 @@ server <- function(input, output, session) {
       hr(),
       strong("Candidates in this Election:"),
       p(HTML(paste(config$candidates, collapse = "<br>"))),
+      textOutput("ballot_count_p1"),
+      tags$details(
+        tags$summary("View Recorded Ballots"),
+        div(style = "max-height: 300px; overflow-y: auto;",
+            tableOutput("ballot_table_p1")
+        )
+      ),
+      tags$details(
+        tags$summary("View Preferences by Candidate"),
+        div(class = "plot-container", # Add class for scrolling
+            uiOutput("candidate_pref_plots_p1")
+        )
+      ),
       hr(),
       radioButtons("tabulation_method_choice", "Choose Tabulation Method:",
                    choices = c("CPO-STV" = "cpo_stv",
@@ -283,7 +337,11 @@ server <- function(input, output, session) {
                                "Borda Scores" = "borda",
                                "Borda with Tiebreakers" = "borda_tb"),
                    selected = "cpo_stv"),
-      actionButton("to_process_page_2", "Continue", class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("to_process_page_2", "Continue", class = "btn-primary")
+      )
     )
   }
   
@@ -304,6 +362,19 @@ server <- function(input, output, session) {
       hr(),
       strong("Candidates in this Election:"),
       p(HTML(paste(config$candidates, collapse = "<br>"))),
+      textOutput("ballot_count_p2"),
+      tags$details(
+        tags$summary("View Recorded Ballots"),
+        div(style = "max-height: 300px; overflow-y: auto;",
+            tableOutput("ballot_table_p2")
+        )
+      ),
+      tags$details(
+        tags$summary("View Preferences by Candidate"),
+        div(class = "plot-container", # Add class for scrolling
+            uiOutput("candidate_pref_plots_p2")
+        )
+      ),
       br(),
       div(id = "processing_inputs",
           div(id = "seats_option",
@@ -339,8 +410,12 @@ server <- function(input, output, session) {
           checkboxInput("verbose_output", "Show verbose output",
                         value = FALSE),
           
-          actionButton("submit_processing", "Process Results",
-                       class = "btn-info", icon = icon("calculator"))
+          div(class = "footer-buttons",
+              actionButton("return_home_general", "Return to Home",
+                           class="btn-secondary"),
+              actionButton("submit_processing", "Process Results",
+                           class = "btn-info", icon = icon("calculator"))
+          )
       ),
       hr(),
       h4("Results:"),
@@ -348,9 +423,10 @@ server <- function(input, output, session) {
       tableOutput("table_results"),
       
       shinyjs::hidden(
-        div(id = "post_processing_ui",
-            br(),
-            actionButton("return_home_from_results", "Return to Home",
+        div(id = "post_processing_ui", class = "footer-buttons",
+            # Buttons are already spaced due to footer-buttons class
+            span(), # Pushes button right
+            actionButton("return_home_general", "Return to Home",
                          class = "btn-primary", icon = icon("home"))
         )
       )
@@ -367,7 +443,12 @@ server <- function(input, output, session) {
       p("This election is password-protected. Please enter the admin password."),
       hr(),
       passwordInput("admin_password_check", "Admin Password"),
-      actionButton("submit_password_check", "Submit", class = "btn-primary"),
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          actionButton("submit_password_check", "Submit", class = "btn-primary")
+      ),
+      # Ensure keypress listener is removed before adding a new one
       shinyjs::runjs("
         $(document).off('keypress', '#admin_password_check').on('keypress', '#admin_password_check', function(e) {
           if (e.which == 13) {
@@ -406,9 +487,19 @@ server <- function(input, output, session) {
                      class = "btn-warning")
       ),
       
+      hr(),
+      
+      div(style = "text-align: center; margin-top: 20px;",
+          actionButton("delete_election_confirm_prompt", "Delete Election",
+                       class = "btn-danger", icon = icon("trash"))
+      ),
+      
       br(),
-      actionButton("return_home_from_edit", "Return to Home",
-                   class = "btn-primary")
+      div(class = "footer-buttons",
+          actionButton("return_home_general", "Return to Home",
+                       class="btn-secondary"),
+          span() # Placeholder for spacing if needed later
+      )
     )
   }
   
@@ -418,10 +509,215 @@ server <- function(input, output, session) {
       hr(),
       p(end_screen_message()),
       br(),
-      actionButton("return_home", "Return to Home", class = "btn-primary",
-                   icon = icon("home"))
+      actionButton("return_home_general", "Return to Home",
+                   class = "btn-primary", icon = icon("home"))
     )
   }
+  
+  # -- Helper Reactive for Ballot Data -----------------------------------------
+  
+  ballot_data_reactive <- reactive({
+    req(active_election_id(), election_config())
+    election_path <- file.path("Elections", active_election_id())
+    ballot_files <- list.files(election_path,
+                               pattern = "ballot_.*\\.json", full.names = TRUE)
+    
+    if (length(ballot_files) == 0) {
+      return(NULL)
+    }
+    
+    config_candidates <- election_config()$candidates
+    if(is.null(config_candidates)) return(NULL) # Ensure candidates are loaded
+    
+    all_ballots_list <- lapply(ballot_files, function(f) {
+      ballot_list <- tryCatch(fromJSON(f), error = function(e) {
+        warning(paste("Could not read or parse ballot file:", f, "-", e$message))
+        NULL
+      })
+      if (is.null(ballot_list)) return(NULL) # Skip corrupted/unreadable files
+      
+      # Convert ballot values to numeric, coercing errors to NA
+      # and ensure names match config_candidates
+      processed_ballot <- vector("list", length(config_candidates))
+      names(processed_ballot) <- config_candidates
+      
+      for (cand in config_candidates) {
+        val <- ballot_list[[cand]] # Access by name
+        if (is.null(val)) {
+          processed_ballot[[cand]] <- NA_real_ # Use NA_real_ for numeric NA
+        } else {
+          num_val <- suppressWarnings(as.numeric(val))
+          # Set ranks outside valid range or non-numeric/zero to NA
+          if (is.na(num_val) || num_val == 0 || num_val < 1 || num_val > length(config_candidates)) {
+            processed_ballot[[cand]] <- NA_real_
+          } else {
+            processed_ballot[[cand]] <- num_val
+          }
+        }
+      }
+      return(processed_ballot) # Return the processed list
+    })
+    
+    # Filter out NULLs from failed reads
+    all_ballots_valid_lists <- Filter(Negate(is.null), all_ballots_list)
+    if (length(all_ballots_valid_lists) == 0) return(NULL)
+    
+    # Convert the list of lists to a data frame
+    combined_df <- tryCatch(bind_rows(all_ballots_valid_lists), error = function(e){
+      warning(paste("Error combining ballots:", e$message))
+      NULL # Return NULL if bind_rows fails
+    })
+    
+    return(combined_df)
+  })
+  
+  
+  # -- Output Renderers for Ballot Count and Table -----------------------------
+  
+  # Helper function to format ballot table for display
+  format_ballot_table <- function(df) {
+    if (is.null(df) || !is.data.frame(df)) return(NULL)
+    # Apply formatting to numeric columns only
+    df %>% mutate(across(where(is.numeric), ~ sprintf("%.0f", .)))
+  }
+  
+  output$ballot_count_p1 <- renderText({
+    df <- ballot_data_reactive()
+    count <- if (is.null(df) || !is.data.frame(df)) 0 else nrow(df)
+    paste("Number of ballots recorded:", count)
+  })
+  
+  output$ballot_table_p1 <- renderTable({
+    format_ballot_table(ballot_data_reactive())
+  }, na = "Unranked", rownames = TRUE)
+  
+  output$ballot_count_p2 <- renderText({
+    df <- ballot_data_reactive()
+    count <- if (is.null(df) || !is.data.frame(df)) 0 else nrow(df)
+    paste("Number of ballots recorded:", count)
+  })
+  
+  output$ballot_table_p2 <- renderTable({
+    format_ballot_table(ballot_data_reactive())
+  }, na = "Unranked", rownames = TRUE)
+  
+  # -- Output Renderers for Candidate Preference Plots -------------------------
+  
+  observe({
+    req(election_config(), ballot_data_reactive())
+    ballot_df <- ballot_data_reactive()
+    candidates <- election_config()$candidates
+    num_candidates <- length(candidates)
+    
+    if (is.null(ballot_df) || nrow(ballot_df) == 0 || ncol(ballot_df) == 0) {
+      output$candidate_pref_plots_p1 <- renderUI({ p("No valid ballots recorded yet.") })
+      output$candidate_pref_plots_p2 <- renderUI({ p("No valid ballots recorded yet.") })
+      return()
+    }
+    
+    # Define a color palette
+    max_ranks <- num_candidates
+    palette_name <- "Paired"
+    num_colors_needed <- max_ranks
+    if (num_colors_needed <= 12) {
+      rank_colors <- brewer.pal(max(3, num_colors_needed), palette_name)[1:num_colors_needed]
+    } else {
+      rank_colors <- colorRampPalette(brewer.pal(12, palette_name))(num_colors_needed)
+    }
+    names(rank_colors) <- as.character(1:max_ranks)
+    
+    
+    lapply(candidates, function(cand) {
+      output_name <- paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand))
+      
+      output[[output_name]] <- renderPlot({
+        current_ballot_df <- ballot_data_reactive()
+        if (!cand %in% names(current_ballot_df)) {
+          return(ggplot() + labs(title = cand) + annotate("text", x=1, y=1, label="Data error: Candidate column missing"))
+        }
+        
+        ranks <- current_ballot_df[[cand]][!is.na(current_ballot_df[[cand]])]
+        
+        if (length(ranks) == 0) {
+          # Empty plot for no ranks
+          ggplot() +
+            labs(title = cand, x = "Rank", y = "Number of Ballots") +
+            scale_x_continuous(breaks = 1:num_candidates,
+                               limits = c(0.5, num_candidates + 0.5)) +
+            theme_minimal(base_size = 10) +
+            theme(plot.title = element_text(hjust = 0.5),
+                  panel.background = element_rect(fill = "transparent", colour = NA),
+                  plot.background = element_rect(fill = "transparent", colour = NA)
+            ) +
+            annotate("text", x = (num_candidates + 1) / 2, y = 0,
+                     label = "No ranks received", hjust = 0.5, vjust = 0,
+                     color = ifelse(is_dark(), "white", "black"))
+        } else {
+          # Plotting logic for candidates with ranks
+          rank_factor <- factor(ranks, levels = 1:num_candidates)
+          rank_counts <- table(rank_factor)
+          plot_data <- data.frame(
+            Rank = factor(names(rank_counts), levels = 1:num_candidates),
+            Count = as.integer(rank_counts)
+          )
+          
+          ggplot(plot_data, aes(x = Rank, y = Count, fill = Rank)) +
+            geom_bar(stat = "identity") +
+            scale_fill_manual(values = rank_colors, drop = FALSE,
+                              name = "Rank") +
+            labs(title = cand, x = "Rank", y = "Number of Ballots") +
+            theme_minimal(base_size = 10) +
+            theme(axis.text.x = element_text(angle = 0),
+                  plot.title = element_text(hjust = 0.5),
+                  panel.background = element_rect(fill = "transparent", colour = NA),
+                  plot.background = element_rect(fill = "transparent", colour = NA),
+                  axis.text = element_text(color = ifelse(is_dark(), "white", "black")),
+                  axis.title = element_text(color = ifelse(is_dark(), "white", "black")),
+                  title = element_text(color = ifelse(is_dark(), "white", "black")),
+                  legend.position = "none" # Hide legend
+            ) +
+            scale_x_discrete(drop = FALSE) +
+            scale_y_continuous(
+              limits = c(0, NA),
+              breaks = scales::pretty_breaks(
+                n = max(3, max(plot_data$Count, na.rm = TRUE), na.rm = TRUE)
+              )
+            )
+        }
+      }, bg="transparent")
+    })
+    
+    # Generate the UI placeholders for the plots
+    output$candidate_pref_plots_p1 <- renderUI({
+      req(election_config())
+      candidates <- election_config()$candidates
+      num_candidates <- length(candidates)
+      plot_width <- max(200, num_candidates * 25 + 60)
+      
+      plot_output_list <- lapply(candidates, function(cand) {
+        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+                   height = "250px", width = paste0(plot_width, "px"))
+      })
+      div(style="display: flex; flex-wrap: wrap; gap: 10px;",
+          plot_output_list)
+    })
+    
+    output$candidate_pref_plots_p2 <- renderUI({
+      req(election_config())
+      candidates <- election_config()$candidates
+      num_candidates <- length(candidates)
+      plot_width <- max(200, num_candidates * 25 + 60)
+      
+      plot_output_list <- lapply(candidates, function(cand) {
+        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+                   height = "250px", width = paste0(plot_width, "px"))
+      })
+      div(style="display: flex; flex-wrap: wrap; gap: 10px;",
+          plot_output_list)
+    })
+    
+  })
+  
   
   # -- Hub Logic ---------------------------------------------------------------
   
@@ -473,10 +769,15 @@ server <- function(input, output, session) {
   observeEvent(input$go_to_function, {
     last_function_choice(input$app_function)
     id <- tolower(trimws(input$election_id))
+    
     if (id == "") {
       showModal(show_error_modal("Election ID cannot be empty."))
       return()
     }
+    
+    # Set the 'last_known_id' immediately, so we can return to it.
+    last_known_id(id) 
+    
     election_path <- file.path("Elections", id)
     config_path <- file.path(election_path, "config.json")
     
@@ -488,10 +789,16 @@ server <- function(input, output, session) {
         return()
       }
       
-      config <- fromJSON(config_path)
+      config <- tryCatch(fromJSON(config_path), error = function(e) {
+        showModal(show_error_modal(paste("Error reading config file:", e$message)))
+        return(NULL)
+      })
+      if(is.null(config)) return()
       
       if (input$app_function == "ballot") {
-        if (!is.null(config$accepting_responses) && !config$accepting_responses) {
+        # Default to TRUE if missing
+        if (is.null(config$accepting_responses)) config$accepting_responses <- TRUE
+        if (!config$accepting_responses) {
           showModal(show_error_modal(
             "This election is not currently accepting new ballots."
           ))
@@ -502,12 +809,17 @@ server <- function(input, output, session) {
       if (input$app_function == "edit") {
         if (is.null(config$accepting_responses)) {
           config$accepting_responses <- TRUE
-          write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+          tryCatch(
+            write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE),
+            error = function(e) {
+              showModal(show_error_modal("Could not update config file."))
+            }
+          )
         }
       }
       
       election_config(config)
-      active_election_id(id)
+      active_election_id(id) # Set active ID only on successful load
       
       if (input$app_function == "edit") {
         if (!is.null(config$password_hash) && config$password_hash != "") {
@@ -524,8 +836,9 @@ server <- function(input, output, session) {
         showModal(show_error_modal(
           "An election with this ID already exists. Please choose another."
         ))
+        return()
       } else {
-        active_election_id(id)
+        active_election_id(id) # Set active ID on successful create nav
         current_ui("create")
       }
     }
@@ -536,11 +849,23 @@ server <- function(input, output, session) {
   observeEvent(input$to_create_page_2, {
     candidate_names_from_csv <- ""
     if (!is.null(input$ballot_file)) {
-      ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-      processed_df <- ballot_df %>% select(where(is.numeric)) %>%
-        removeQuestion()
-      candidates <- colnames(processed_df)
-      candidate_names_from_csv <- paste(candidates, collapse = "\n")
+      tryCatch({
+        ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
+        processed_df <- ballot_df %>% select(where(is.numeric)) %>%
+          removeQuestion()
+        candidates <- colnames(processed_df)
+        if (length(candidates) < 1) {
+          stop("No numeric ranking columns found after processing.")
+        }
+        candidate_names_from_csv <- paste(candidates, collapse = "\n")
+      }, error = function(e) {
+        showModal(show_error_modal(
+          paste("Error processing CSV:", e$message,
+                "Please check file format and ensure ranks are numeric.")
+        ))
+        reset("ballot_file")
+        candidate_names_from_csv <<- ""
+      })
     }
     creation_page(2)
     shinyjs::delay(1, {
@@ -580,16 +905,36 @@ server <- function(input, output, session) {
     write_json(config, file.path(election_path, "config.json"),
                auto_unbox = TRUE, pretty = TRUE)
     if (!is.null(input$ballot_file)) {
-      ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-      processed_df <- ballot_df %>% select(where(is.numeric)) %>%
-        removeQuestion()
-      for (i in 1:nrow(processed_df)) {
-        ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
-        ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
-        write_json(ballot_data,
-                   file.path(election_path, ballot_filename),
-                   auto_unbox = TRUE)
-      }
+      tryCatch({
+        ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
+        processed_df <- ballot_df %>% select(where(is.numeric)) %>%
+          removeQuestion()
+        csv_candidates <- colnames(processed_df)
+        if(!identical(candidates, csv_candidates)){
+          if(setequal(candidates, csv_candidates)){
+            processed_df <- processed_df[, candidates]
+            warning("CSV columns reordered to match candidate list.")
+          } else {
+            stop("Candidate list derived from CSV does not match final list.")
+          }
+        }
+        
+        for (i in 1:nrow(processed_df)) {
+          ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
+          ballot_data <- lapply(ballot_data,
+                                function(x) if(is.numeric(x)) x else NA)
+          ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
+          write_json(ballot_data,
+                     file.path(election_path, ballot_filename),
+                     auto_unbox = TRUE, na = "null")
+        }
+      }, error = function(e) {
+        unlink(election_path, recursive = TRUE)
+        showModal(show_error_modal(
+          paste("Error processing CSV for ballot creation:", e$message)
+        ))
+        return()
+      })
     }
     end_screen_message(paste("Successfully created election:",
                              input$election_title))
@@ -627,7 +972,9 @@ server <- function(input, output, session) {
   process_and_save_ballot <- function() {
     config <- election_config()
     
-    if (!is.null(config$accepting_responses) && !config$accepting_responses) {
+    # Re-check accepting responses status right before saving
+    if (is.null(config$accepting_responses)) config$accepting_responses <- TRUE
+    if (!config$accepting_responses) {
       showModal(show_error_modal(
         "This election is not currently accepting responses."
       ))
@@ -658,7 +1005,7 @@ server <- function(input, output, session) {
     ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
     election_path <- file.path("Elections", active_election_id())
     write_json(ballot_data, file.path(election_path, ballot_filename),
-               auto_unbox = TRUE)
+               auto_unbox = TRUE, na = "null") # Ensure NAs are handled
     end_screen_message("Your ballot has been successfully submitted.")
     current_ui("end")
   }
@@ -706,29 +1053,32 @@ server <- function(input, output, session) {
   })
   
   observeEvent(input$accepting_responses, {
+    if(is.null(election_config())) return()
+    
     config <- election_config()
     config$accepting_responses <- input$accepting_responses
     election_config(config)
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
-    write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
-    
-    showNotification(
-      paste("Accepting responses set to:", input$accepting_responses),
-      type = "message"
-    )
-  })
+    tryCatch({
+      write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+      showNotification(
+        paste("Accepting responses set to:", input$accepting_responses),
+        type = "message"
+      )
+    }, error = function(e){
+      showModal(show_error_modal(paste("Failed to update config file:", e$message)))
+    })
+  }, ignoreInit = TRUE)
   
   observeEvent(input$change_password, {
     config <- election_config()
     
-    # Validation checks
     if (input$new_password != input$confirm_new_password) {
       showModal(show_error_modal("New passwords do not match."))
       return()
     }
     
-    # Check old password if one is set
     has_old_pass <- !is.null(config$password_hash) && config$password_hash != ""
     if (has_old_pass) {
       hashed_old_pass <- digest(input$old_password, "sha256")
@@ -745,16 +1095,70 @@ server <- function(input, output, session) {
       }
     }
     
-    # Update and save password
     config$password_hash <- if (input$new_password != "") {
       digest(input$new_password, "sha256")
     } else { NULL }
     election_config(config)
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
-    write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+    tryCatch({
+      write_json(config, config_path, auto_unbox = TRUE, pretty = TRUE)
+      show_success_modal("Password updated successfully.")
+      updateTextInput(session, "old_password", value = "")
+      updateTextInput(session, "new_password", value = "")
+      updateTextInput(session, "confirm_new_password", value = "")
+    }, error = function(e){
+      showModal(show_error_modal(paste("Failed to update config file:", e$message)))
+    })
+  })
+  
+  observeEvent(input$delete_election_confirm_prompt, {
+    showModal(modalDialog(
+      title = "Confirm Deletion",
+      p(paste("This action cannot be undone. Are you sure you want to delete",
+              "election", sQuote(active_election_id()), "?")),
+      passwordInput("delete_password_confirm", "Re-enter Admin Password to Confirm"),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_delete", "Delete Election", class = "btn-danger")
+      )
+    ))
+  })
+  
+  observeEvent(input$confirm_delete, {
+    config <- election_config()
     
-    show_success_modal("Password updated successfully.")
+    # Check if password is required and correct
+    password_required <- !is.null(config$password_hash) && config$password_hash != ""
+    if(password_required) {
+      # Require password entry even to check
+      req(input$delete_password_confirm) 
+      hashed_input <- digest(input$delete_password_confirm, "sha256")
+      if (hashed_input != config$password_hash) {
+        showModal(show_error_modal("Incorrect password. Deletion cancelled."))
+        return()
+      }
+    } else {
+      # If no password set, check if user entered anything
+      if(input$delete_password_confirm != "") {
+        showModal(show_error_modal("No password is set for this election. Leave field blank."))
+        return()
+      }
+    }
+    
+    election_path <- file.path("Elections", active_election_id())
+    
+    tryCatch({
+      unlink(election_path, recursive = TRUE, force = TRUE)
+      removeModal()
+      last_known_id(NULL) # Clear the last known ID
+      end_screen_message(paste("Election", sQuote(active_election_id()),
+                               "successfully deleted."))
+      current_ui("end")
+    }, error = function(e){
+      removeModal() # Close confirmation modal first
+      showModal(show_error_modal(paste("Failed to delete election:", e$message)))
+    })
   })
   
   
@@ -783,57 +1187,72 @@ server <- function(input, output, session) {
     output$text_results <- renderPrint({ "" })
     output$table_results <- renderTable({ NULL })
     
-    election_path <- file.path("Elections", active_election_id())
-    ballot_files <- list.files(election_path,
-                               pattern = "ballot_.*\\.json", full.names = TRUE)
-    if (length(ballot_files) == 0) {
+    ballot_df <- ballot_data_reactive()
+    
+    if (is.null(ballot_df)) {
       output$text_results <- renderPrint({
-        "No ballots have been submitted for this election."
+        "No ballots found or error reading ballots for this election."
       })
       return()
     }
-    all_ballots <- lapply(ballot_files, function(f) {
-      ballot <- fromJSON(f)
-      ballot[ballot == 0] <- NA
-      return(as.data.frame(ballot))
-    })
-    ballot_df <- bind_rows(all_ballots)
     
     returned_value <- NULL
     printed_output <- NULL
     
     tryCatch({
-      printed_output <- capture.output({
-        method <- tabulation_method()
-        verbose_flag <- input$verbose_output
-        
-        returned_value <- if (method == "cpo_stv") {
-          cpo_stv(ballot_df, seats = input$process_seats,
-                  ties = input$tiebreak_methods_cpo, seed = input$seed,
-                  verbose = verbose_flag)
-        } else if (method == "borda_tb") {
-          borda(ballot_df, seats = input$process_seats,
-                ties = input$tiebreak_methods_borda_tb, seed = input$seed,
+      # Use sink to capture all output, including direct prints and messages
+      output_con <- textConnection("printed_output", "w", local = TRUE)
+      sink(output_con, type = "output")
+      sink(output_con, type = "message")
+      
+      method <- tabulation_method()
+      verbose_flag <- input$verbose_output
+      
+      current_seed <- if(method == "borda") default_seed else input$seed
+      if(is.na(current_seed) || is.null(current_seed)){
+        current_seed <- default_seed
+      }
+      
+      returned_value <- if (method == "cpo_stv") {
+        cpo_stv(ballot_df, seats = input$process_seats,
+                ties = input$tiebreak_methods_cpo, seed = current_seed,
                 verbose = verbose_flag)
-        } else if (method == "borda") {
-          borda(ballot_df, seats = 0, seed = input$seed,
-                verbose = verbose_flag)
-        } else { # Standard stv
-          config <- election_config()
-          stv(ballot_df, nseats = input$process_seats,
-              seed = input$seed, verbose = verbose_flag,
-              equal.ranking = config$allow_ties)
-        }
-      })
+      } else if (method == "borda_tb") {
+        borda(ballot_df, seats = input$process_seats,
+              ties = input$tiebreak_methods_borda_tb, seed = current_seed,
+              verbose = verbose_flag)
+      } else if (method == "borda") {
+        borda(ballot_df, seats = 0, seed = current_seed,
+              verbose = verbose_flag)
+      } else { # Standard stv
+        config <- election_config()
+        # Pass verbose flag to base stv function
+        stv(ballot_df, nseats = input$process_seats,
+            seed = current_seed, verbose = verbose_flag,
+            equal.ranking = config$allow_ties)
+      }
+      
+      # Close connections
+      sink(type = "message"); sink(type = "output")
+      close(output_con)
+      
     }, error = function(e) {
+      # Ensure sinks are closed on error too
+      if(sink.number(type="message") > 0) sink(type="message")
+      if(sink.number(type="output") > 0) sink(type="output")
+      if(exists("output_con") && isOpen(output_con)) close(output_con)
+      
       printed_output <<- paste("An error occurred during calculation:", e$message)
+      returned_value <<- NULL # Ensure no table is shown on error
     })
     
     if (is.data.frame(returned_value) || is_tibble(returned_value)) {
       output$table_results <- renderTable({ returned_value })
     } else if (!is.null(returned_value)) {
+      # Capture the print output of non-data frame results
       additional_output <- capture.output(print(returned_value))
-      printed_output <- c(printed_output, additional_output)
+      # Prepend additional output to the captured console output
+      printed_output <- c(additional_output, printed_output)
     }
     
     output$text_results <- renderPrint({
@@ -849,9 +1268,16 @@ server <- function(input, output, session) {
   # -- End Screen/Return Home Logic -------------------------------------------
   
   reset_to_hub <- function() {
-    last_election_id <- active_election_id()
+    # This logic now correctly finds the last ID used,
+    # whether from a successful action (active) or a failed one (known)
+    last_id <- active_election_id()
+    if (is.null(last_id) || last_id == "") {
+      last_id <- last_known_id()
+    }
     
-    active_election_id(NULL)
+    active_election_id(NULL) # Clear the *active* session
+    last_known_id(last_id) # Persist the last known ID
+    
     election_config(NULL)
     end_screen_message("")
     shinyjs::show("processing_inputs")
@@ -863,13 +1289,11 @@ server <- function(input, output, session) {
     current_ui("hub")
     
     shinyjs::delay(1, {
-      updateTextInput(session, "election_id", value = last_election_id)
+      updateTextInput(session, "election_id", value = last_id)
     })
   }
   
-  observeEvent(input$return_home_from_results, { reset_to_hub() })
-  observeEvent(input$return_home, { reset_to_hub() })
-  observeEvent(input$return_home_from_edit, { reset_to_hub() })
+  observeEvent(input$return_home_general, { reset_to_hub() })
   
 }
 
