@@ -1,16 +1,8 @@
 # ==============================================================================
 # Vibe-Coded Shiny Election App
 #
-# To Run:
-# 1. Install packages:
-#    install.packages(c("bslib", "digest", "dplyr", "forcats", "gtools",
-#    "ggplot2", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny",
-#    "shinyjs", "sortable", "stringi", "tibble", "tidyverse", "uuid", "vote"))
-# 2. Download the latest version of the repo from
-#    https://github.com/zenonsommers/rcbc_shiny/tree/main and extract it to a
-#    local directory
-# 3. Open R/RStudio and run `shiny::runApp()` in the directory where you
-#    saved the files from the repo.
+# To run, follow the instructions in the readme file:
+# https://github.com/zenonsommers/rcbc_shiny/blob/main/README.md
 # ==============================================================================
 
 # Load necessary libraries
@@ -24,9 +16,9 @@ library(vote)
 library(tibble)
 library(bslib)
 library(digest)
-library(ggplot2) # Needed for plots
-library(forcats) # Needed for factor levels in plots
-library(RColorBrewer) # For color palettes
+library(ggplot2)
+library(forcats)
+library(RColorBrewer)
 
 # Load the cpo_stv function
 source("cpo_stv.R")
