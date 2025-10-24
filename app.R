@@ -78,6 +78,7 @@ theme <- bs_theme(version = 5, base_font = font_google("Inter"),
 css_rules <- "
   body {
     padding-top: 5px;
+    padding-bottom: 10px; /* Add padding to the bottom */
   }
   #darkModeToggle {
     color: var(--bs-body-color);
@@ -580,6 +581,13 @@ server <- function(input, output, session) {
   
   # -- Output Renderers for Ballot Count and Table -----------------------------
   
+  # Helper function to format ballot table for display
+  format_ballot_table <- function(df) {
+    if (is.null(df) || !is.data.frame(df)) return(NULL)
+    # Apply formatting to numeric columns only
+    df %>% mutate(across(where(is.numeric), ~ sprintf("%.0f", .)))
+  }
+  
   output$ballot_count_p1 <- renderText({
     df <- ballot_data_reactive()
     count <- if (is.null(df) || !is.data.frame(df)) 0 else nrow(df)
@@ -587,7 +595,7 @@ server <- function(input, output, session) {
   })
   
   output$ballot_table_p1 <- renderTable({
-    ballot_data_reactive()
+    format_ballot_table(ballot_data_reactive())
   }, na = "Unranked", rownames = TRUE)
   
   output$ballot_count_p2 <- renderText({
@@ -597,7 +605,7 @@ server <- function(input, output, session) {
   })
   
   output$ballot_table_p2 <- renderTable({
-    ballot_data_reactive()
+    format_ballot_table(ballot_data_reactive())
   }, na = "Unranked", rownames = TRUE)
   
   # -- Output Renderers for Candidate Preference Plots -------------------------
@@ -1217,9 +1225,8 @@ server <- function(input, output, session) {
               verbose = verbose_flag)
       } else { # Standard stv
         config <- election_config()
-        # Note: Base stv function doesn't have explicit verbose, relies on print
         stv(ballot_df, nseats = input$process_seats,
-            seed = current_seed,
+            verbose = verbose_flag, seed = current_seed,
             equal.ranking = config$allow_ties)
       }
       
