@@ -1283,7 +1283,7 @@ server <- function(input, output, session) {
       last_id <- last_known_id()
     }
     
-    #active_election_id(NULL) # Clear the *active* session
+    active_election_id(NULL) # Clear the *active* session
     last_known_id(last_id) # Persist the last known ID
     
     election_config(NULL)
