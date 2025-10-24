@@ -105,6 +105,15 @@ css_rules <- "
     overflow-y: hidden; /* Hide vertical scrollbar on container */
     padding-bottom: 15px; /* Add space for horizontal scrollbar */
   }
+  /* Ensure modal content respects theme */
+  .modal-body {
+    color: var(--bs-body-color);
+  }
+  #delete_password_confirm {
+     background-color: var(--bs-input-bg);
+     color: var(--bs-body-color);
+     border-color: var(--bs-input-border-color);
+  }
 "
 
 # Conditionally add the sortable style if the flag is TRUE
@@ -484,6 +493,13 @@ server <- function(input, output, session) {
                      class = "btn-warning")
       ),
       
+      hr(),
+      
+      div(style = "text-align: center; margin-top: 20px;",
+          actionButton("delete_election_confirm_prompt", "Delete Election",
+                       class = "btn-danger", icon = icon("trash"))
+      ),
+      
       br(),
       div(class = "footer-buttons",
           actionButton("return_home_general", "Return to Home",
@@ -600,17 +616,13 @@ server <- function(input, output, session) {
     
     # Define a color palette
     max_ranks <- num_candidates
-    # Use a colorblind-friendly palette if possible, cycle if needed
-    palette_name <- "Paired" # Good for distinct categories
+    palette_name <- "Paired"
     num_colors_needed <- max_ranks
-    # RColorBrewer palettes have max limits (e.g., Paired has 12)
     if (num_colors_needed <= 12) {
       rank_colors <- brewer.pal(max(3, num_colors_needed), palette_name)[1:num_colors_needed]
     } else {
-      # Fallback or cycle colors if more ranks than palette colors
       rank_colors <- colorRampPalette(brewer.pal(12, palette_name))(num_colors_needed)
     }
-    # Create a named vector for scale_fill_manual
     names(rank_colors) <- as.character(1:max_ranks)
     
     
@@ -650,7 +662,7 @@ server <- function(input, output, session) {
           
           ggplot(plot_data, aes(x = Rank, y = Count, fill = Rank)) +
             geom_bar(stat = "identity") +
-            scale_fill_manual(values = rank_colors, drop = FALSE, # Assign colors
+            scale_fill_manual(values = rank_colors, drop = FALSE,
                               name = "Rank") +
             labs(title = cand, x = "Rank", y = "Number of Ballots") +
             theme_minimal(base_size = 10) +
@@ -661,7 +673,7 @@ server <- function(input, output, session) {
                   axis.text = element_text(color = ifelse(is_dark(), "white", "black")),
                   axis.title = element_text(color = ifelse(is_dark(), "white", "black")),
                   title = element_text(color = ifelse(is_dark(), "white", "black")),
-                  legend.position = "none" # Hide legend as colors match x-axis
+                  legend.position = "none" # Hide legend
             ) +
             scale_x_discrete(drop = FALSE) +
             scale_y_continuous(
@@ -679,14 +691,12 @@ server <- function(input, output, session) {
       req(election_config())
       candidates <- election_config()$candidates
       num_candidates <- length(candidates)
-      # Calculate width: approx 25px per bar + 60px padding/axis labels
       plot_width <- max(200, num_candidates * 25 + 60)
       
       plot_output_list <- lapply(candidates, function(cand) {
         plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
                    height = "250px", width = paste0(plot_width, "px"))
       })
-      # Wrap plots in a div container for potential horizontal scrolling
       div(style="display: flex; flex-wrap: wrap; gap: 10px;",
           plot_output_list)
     })
@@ -695,14 +705,12 @@ server <- function(input, output, session) {
       req(election_config())
       candidates <- election_config()$candidates
       num_candidates <- length(candidates)
-      # Calculate width: approx 25px per bar + 60px padding/axis labels
       plot_width <- max(200, num_candidates * 25 + 60)
       
       plot_output_list <- lapply(candidates, function(cand) {
         plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
                    height = "250px", width = paste0(plot_width, "px"))
       })
-      # Wrap plots in a div container for potential horizontal scrolling
       div(style="display: flex; flex-wrap: wrap; gap: 10px;",
           plot_output_list)
     })
@@ -1094,6 +1102,53 @@ server <- function(input, output, session) {
       updateTextInput(session, "confirm_new_password", value = "")
     }, error = function(e){
       showModal(show_error_modal(paste("Failed to update config file:", e$message)))
+    })
+  })
+  
+  observeEvent(input$delete_election_confirm_prompt, {
+    showModal(modalDialog(
+      title = "Confirm Deletion",
+      p(paste("This action cannot be undone. Are you sure you want to delete",
+              "election", sQuote(active_election_id()), "?")),
+      passwordInput("delete_password_confirm", "Re-enter Admin Password to Confirm"),
+      footer = tagList(
+        modalButton("Cancel"),
+        actionButton("confirm_delete", "Delete Election", class = "btn-danger")
+      )
+    ))
+  })
+  
+  observeEvent(input$confirm_delete, {
+    req(input$delete_password_confirm)
+    config <- election_config()
+    
+    # Check if password is required and correct
+    password_required <- !is.null(config$password_hash) && config$password_hash != ""
+    if(password_required) {
+      hashed_input <- digest(input$delete_password_confirm, "sha256")
+      if (hashed_input != config$password_hash) {
+        showModal(show_error_modal("Incorrect password. Deletion cancelled."))
+        return()
+      }
+    } else {
+      # If no password set, check if user entered anything (they shouldn't have)
+      if(input$delete_password_confirm != "") {
+        showModal(show_error_modal("No password is set for this election. Leave field blank."))
+        return()
+      }
+    }
+    
+    election_path <- file.path("Elections", active_election_id())
+    
+    tryCatch({
+      unlink(election_path, recursive = TRUE, force = TRUE)
+      removeModal()
+      end_screen_message(paste("Election", sQuote(active_election_id()),
+                               "successfully deleted."))
+      current_ui("end")
+    }, error = function(e){
+      removeModal() # Close confirmation modal first
+      showModal(show_error_modal(paste("Failed to delete election:", e$message)))
     })
   })
   
