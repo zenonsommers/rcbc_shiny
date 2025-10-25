@@ -208,7 +208,7 @@ server <- function(input, output, session) {
   
   hub_ui <- function() {
     tagList(
-      h3("Welcome"),
+      h3("Welcome!"),
       p("Select an action and provide an Election ID to begin."),
       hr(),
       wellPanel(
