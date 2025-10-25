@@ -945,6 +945,7 @@ server <- function(input, output, session) {
   
   output$ballot_interface <- renderUI({
     config <- election_config()
+    req(config)
     randomized_candidates <- sample(config$candidates)
     if (!config$allow_incomplete && !config$allow_ties) {
       initial_ballot_order(randomized_candidates)
