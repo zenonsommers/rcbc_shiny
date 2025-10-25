@@ -3,7 +3,7 @@ A Shiny app for configuring, administering, and tabulating multi-winner ranked c
 # Quick Run
 To quickly run the app, open an R console and run the command `shiny::runGitHub("rcbc_shiny", "zenonsommers")`.
 # Installation
-To run the app locally:
+To install a persistent local version of the app:
 1. Download the repository and extract the files into a local directory.
 2. Open `RCBC Shiny Voting Suite.Rproj` in [RStudio](https://posit.co/download/rstudio-desktop/).
 3. Run the following command in the RStudio console to install the required dependencies: `install.packages(c("bslib", "digest", "dplyr", "forcats", "gtools", "ggplot2", "jsonlite", "magrittr", "RColorBrewer", "readxl", "shiny", "shinyjs", "sortable", "stringi", "tibble", "tidyverse", "uuid", "vote"))`
@@ -20,4 +20,5 @@ The code for the CPO-STV and Borda methods is from [our own implementation](http
 
 
 To access the sample elections, copy the contents of the `Sample Data` folder into the `Elections` folder. You may need to create the `Elections` folder manually if you have not yet run the app. Currently, the sample election `rcbc-cycle-1` is set to "not accepting new responses" as an example. The admin password for all sample elections is `password`.
+
 
