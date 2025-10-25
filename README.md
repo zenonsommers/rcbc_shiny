@@ -1,7 +1,7 @@
 # RCBC Shiny Election Suite
 A Shiny app for configuring, administering, and tabulating multi-winner ranked choice elections.
 # Quick Run
-To quickly run the app, open an R console and run the command `shiny::runGitHub("rcbc_shiny", "zenonsommers")`.
+To quickly run the app, open an R console and run the command `shiny::runGitHub("rcbc_shiny", "zenonsommers")`. This may not save data properly between sessions.
 # Installation
 To install the app locally for data persistence:
 1. Download the repository and extract the files into a local directory.
@@ -20,6 +20,7 @@ The code for the CPO-STV and Borda methods is from [our own implementation](http
 
 
 To access the sample elections, copy the contents of the `Sample Data` folder into the `Elections` folder. You may need to create the `Elections` folder manually if you have not yet run the app. Currently, the sample election `rcbc-cycle-1` is set to "not accepting new responses" as an example. The admin password for all sample elections is `password`.
+
 
 
 
