@@ -822,10 +822,10 @@ server <- function(input, output, session) {
       active_election_id(id) # Set active ID only on successful load
       
       if (input$app_function == "edit") {
-        if (!is.null(config$password_hash) && config$password_hash != "") {
-          editing_page(1)
-        } else {
+        if (config$password_hash == "") {
           editing_page(2)
+        } else {
+          editing_page(1)
         }
       }
       
@@ -899,7 +899,7 @@ server <- function(input, output, session) {
       allow_ties = input$allow_ties,
       password_hash = if (input$password != "") {
         digest::digest(input$password, "sha256")
-      } else { NULL },
+      } else { "" },
       accepting_responses = TRUE
     )
     write_json(config, file.path(election_path, "config.json"),
@@ -1098,7 +1098,7 @@ server <- function(input, output, session) {
     
     config$password_hash <- if (input$new_password != "") {
       digest(input$new_password, "sha256")
-    } else { NULL }
+    } else { "" }
     election_config(config)
     
     config_path <- file.path("Elections", active_election_id(), "config.json")
@@ -1141,8 +1141,8 @@ server <- function(input, output, session) {
       }
     } else {
       # If no password set, check if user entered anything
-      if(input$delete_password_confirm != "") {
-        showModal(show_error_modal("No password is set for this election. Leave field blank."))
+      if(input$delete_password_confirm != "delete") {
+        showModal(show_error_modal("No password is set for this election. Type the word 'delete' in all lowercase in the password field to continue."))
         return()
       }
     }
