@@ -1,0 +1,10 @@
+{
+  "unique_identifier": "rcbc-cycle-12",
+  "title": "rcbc-cycle-12",
+  "candidates": ["Monsters: A Fan's Dilemma | 270", "The Sirens of Titan | 224", "East of Eden | 600", "Piranesi | 272", "Tress of the Emerald Sea | 384", "The Book of Laughter and Forgetting | 320", "Beartown | 496"],
+  "seats": 3,
+  "allow_incomplete": false,
+  "allow_ties": false,
+  "password_hash": "b55162b8eb6f336d9e3679c143e27c145eb8289af32e69410eff16c7e7dd8b1c",
+  "accepting_responses": true
+}
