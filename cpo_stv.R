@@ -357,11 +357,18 @@ borda <- function(df, seats = 3, ties = tie_methods, normalize = TRUE,
   }
 }
 
-elect_random <- function(df, seats = 3, seed = default_seed) {
+elect_random <- function(df, seats = 3, seed = default_seed, normalize = FALSE, 
+                         verbose = FALSE, debug = FALSE) {
+  report <- verbose_setup(verbose)
+  deport <- verbose_setup(debug)
+  
+  report("Beginning random tiebreak")
+  report(paste("Tie is between", colnames(df)))
   set.seed(seed)
   winners <- df %>%
     select(all_of(sample(colnames(.), seats))) %>%
     colnames()
+  report(paste("Random winners are ", winners))
   return(list(winner = winners))
 }
 
