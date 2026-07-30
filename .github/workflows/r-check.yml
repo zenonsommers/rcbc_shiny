@@ -26,9 +26,17 @@ jobs:
             libcurl4-openssl-dev \
             libuv1-dev
 
+      - name: Cache renv library
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/R/renv
+          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-renv-
+
       - name: Install renv and restore dependencies
         run: |
-          install.packages('renv', repos='https://cloud.r-project.org', quiet=TRUE)
+          if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")
           renv::restore()
         shell: Rscript {0}
 
