@@ -21,11 +21,15 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          apt-get update && apt-get install -y libuv1-dev
+          apt-get update && apt-get install -y --no-install-recommends \
+            libwebp-dev \
+            libcurl4-openssl-dev \
+            libuv1-dev
 
-      - name: Install dependencies
+      - name: Install renv and restore dependencies
         run: |
-          install.packages(c('dplyr', 'tidyr', 'shiny', 'sortable', 'jsonlite', 'purrr', 'tibble', 'vote'))
+          install.packages('renv', repos='https://cloud.r-project.org', quiet=TRUE)
+          renv::restore()
         shell: Rscript {0}
 
       - name: Smoke test — source all R files
