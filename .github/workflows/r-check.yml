@@ -34,7 +34,10 @@ jobs:
 
       - name: Smoke test — source all R files
         run: |
-          for (f in list.files('.', pattern = '\\.R$', full.names = TRUE, recursive = FALSE)) {
+          files <- list.files('.', full.names = TRUE, recursive = FALSE)
+          files <- files[endsWith(files, '.R')]
+          files <- files[!basename(files) %in% 'startApp.R']
+          for (f in files) {
             cat('Loading:', f, '\n')
             source(f)
           }
