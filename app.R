@@ -30,6 +30,16 @@ dark_bootswatch <- "darkly"
 # Set to FALSE to disable custom styling for drag-and-drop elements
 enable_custom_sortable_style <- TRUE
 
+# Master lookup: display label (value) → function ID (name).
+# sortable::rank_list returns the vector NAME, so these names are what
+# cpo_stv.R's break_tie() checks against.
+tiebreaker_choices <- c(
+  "borda"   = "Borda",
+  "random"  = "Random",
+  "stv"     = "STV",
+  "cpo_stv" = "CPO-STV"
+)
+
 # -- App Setup -----------------------------------------------------------------
 
 # Ensure the main directory for storing elections exists
@@ -385,8 +395,7 @@ server <- function(input, output, session) {
           div(id = "tiebreak_options_cpo",
               rank_list(
                 text = "Drag to order CPO-STV tie-break methods",
-                labels = c("Borda" = "borda", "Random" = "random",
-                           "STV" = "stv"),
+                labels = tiebreaker_choices[names(tiebreaker_choices) != "cpo_stv"],
                 input_id = "tiebreak_methods_cpo",
                 class = "custom-rank-list"
               )
@@ -395,8 +404,7 @@ server <- function(input, output, session) {
           div(id = "tiebreak_options_borda_tb",
               rank_list(
                 text = "Drag to order Borda tie-break methods",
-                labels = c("CPO-STV" = "cpo_stv", "Random" = "random",
-                           "STV" = "stv"),
+                labels = tiebreaker_choices[names(tiebreaker_choices) != "borda"],
                 input_id = "tiebreak_methods_borda_tb",
                 class = "custom-rank-list"
               )
