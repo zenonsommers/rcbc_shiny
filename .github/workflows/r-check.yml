@@ -1,4 +1,5 @@
 name: R Check
+# Cache test — see PR #48
 
 on:
   push:
