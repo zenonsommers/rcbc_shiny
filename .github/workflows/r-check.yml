@@ -1,0 +1,45 @@
+name: R Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  source-check:
+    runs-on: ubuntu-latest
+    container: rocker/r-ver:4.4
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update && apt-get install -y --no-install-recommends \
+            libwebp-dev \
+            libcurl4-openssl-dev \
+            libuv1-dev
+
+      - name: Install renv and restore dependencies
+        run: |
+          install.packages('renv', repos='https://cloud.r-project.org', quiet=TRUE)
+          renv::restore()
+        shell: Rscript {0}
+
+      - name: Smoke test — source all R files
+        run: |
+          files <- list.files('.', full.names = TRUE, recursive = FALSE)
+          files <- files[endsWith(files, '.R')]
+          files <- files[!basename(files) %in% 'startApp.R']
+          for (f in files) {
+            cat('Loading:', f, '\n')
+            source(f)
+          }
+          cat('All R files loaded successfully.\n')
+        shell: Rscript {0}
