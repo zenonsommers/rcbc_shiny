@@ -88,7 +88,7 @@ normalize_rankings <- function(df) {
   # unranked, they will be tied for last.
   df %>%
     # First, handle missing values by imputing one below the lowest rank
-    mutate(max_rank = do.call(pmax, c(., na.rm = TRUE))) %>%
+    mutate(max_rank = do.call(pmax, c(as.list(.), na.rm = TRUE))) %>%
     mutate(across(everything(), ~ if_else(is.na(.), max_rank + 1, .))) %>%
     select(-max_rank) %>%
     # Pivot all rankings into one column, then group by ballot ID
@@ -375,6 +375,11 @@ elect_random <- function(df, seats = 3, seed = default_seed, normalize = FALSE,
 # If the result of an election is inconclusive, this is used to try the next
 # option
 break_tie <- function(df, seats, guaranteed = c(), tied, ties, ...) {
+  # If no tiebreak methods specified, default to random
+  if (length(ties) == 0) {
+    ties <- "random"
+  }
+  
   # clean data
   votes <- df %>%
     select(all_of(tied)) %>%
@@ -384,9 +389,13 @@ break_tie <- function(df, seats, guaranteed = c(), tied, ties, ...) {
   # right now, anything not recognizable will be interpreted as "random"
   method <- ties[1]
   ties <- ties[-1]
+  # Filter out parameters that stv() doesn't accept
+  stv_args <- list(...)
+  stv_args <- stv_args[names(stv_args) %in% c("quiet", "seed", "verbose", "debug", "debug_mode")]
+  
   if (method == "stv") {
     # Run stv
-    winners <- stv(votes, nseats = seats, quiet = TRUE, ...)
+    winners <- do.call(stv, c(list(votes, nseats = seats), stv_args))
     winners$winner <- winners$elected # can remove if I change "winner" to
     # "elected" throughout
   } else if (method == "borda") {
@@ -404,8 +413,7 @@ break_tie <- function(df, seats, guaranteed = c(), tied, ties, ...) {
     # Run random
     winners <- elect_random(votes, seats = seats, ...)
   }
-  winners$winner <- c(unlist(guaranteed), unlist(winners$winner))
-  return(winners)
+  return(c(unlist(guaranteed), unlist(winners$winner)))
 }
 
 cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE, 
