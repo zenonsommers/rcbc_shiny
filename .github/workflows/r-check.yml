@@ -9,9 +9,6 @@ on:
 permissions:
   contents: read
 
-env:
-  RENV_PATHS_ROOT: ~/.cache/R/renv
-
 jobs:
   source-check:
     runs-on: ubuntu-latest
@@ -35,8 +32,9 @@ jobs:
 
       - name: Cache renv library
         uses: actions/cache@v4
+        id: renv-cache
         with:
-          path: ${{ env.RENV_PATHS_ROOT }}
+          path: ~/.cache/R/renv
           key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
           restore-keys: |
             ${{ runner.os }}-renv-
