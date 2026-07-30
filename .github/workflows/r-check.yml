@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     container: rocker/r-ver:4.4
     timeout-minutes: 5
+    # Caching renv library via actions/cache@v4 — see PR #45
 
     steps:
       - name: Checkout
