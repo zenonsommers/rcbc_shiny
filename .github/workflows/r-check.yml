@@ -1,5 +1,4 @@
 name: R Check
-# Cache test — see PR #48
 
 on:
   push:
@@ -9,6 +8,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  RENV_PATHS_ROOT: ~/.cache/R/renv
 
 jobs:
   source-check:
@@ -31,10 +33,19 @@ jobs:
             libcurl4-openssl-dev \
             libuv1-dev
 
-      - name: Set up renv
-        uses: r-lib/actions/setup-renv@v2
+      - name: Cache renv library
+        uses: actions/cache@v4
         with:
-          renv-version: latest
+          path: ${{ env.RENV_PATHS_ROOT }}
+          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-renv-
+
+      - name: Restore packages
+        run: |
+          if (!requireNamespace("renv", quietly = TRUE)) install.packages("renv")
+          renv::restore()
+        shell: Rscript {0}
 
       - name: Smoke test — source all R files
         run: |
