@@ -9,6 +9,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RENV_PATHS_ROOT: ~/.cache/R/renv
+
 jobs:
   source-check:
     runs-on: ubuntu-latest
