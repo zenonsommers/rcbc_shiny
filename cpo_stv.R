@@ -490,10 +490,12 @@ cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE,
   )
   numoutcomes <- nrow(outcomes)
   # Then we add the first vote winners back in as columns
-  outcomes <- first_vote_winners %>% 
-    sapply(function (winner) rep(winner, numoutcomes)) %>%
-    unname() %>%
-    cbind(outcomes)
+  if (num_first_winners > 0) {
+    outcomes <- first_vote_winners %>% 
+      sapply(function (winner) rep(winner, numoutcomes)) %>%
+      unname() %>%
+      cbind(outcomes)
+  }
   
   # Find all possible pairs of outcomes
   matchups <- combinations(numoutcomes, 2)
