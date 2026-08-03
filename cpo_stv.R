@@ -516,7 +516,15 @@ cpo_stv <- function(df, seats = 3, normalize = TRUE, multi = FALSE,
     outcome_b <- outcomes[index_b,]
     
     relevant_candidates <- unique(c(outcome_a, outcome_b))
+    if (is.list(relevant_candidates)) {
+      relevant_candidates <- unlist(relevant_candidates)
+    }
+    relevant_candidates <- as.character(relevant_candidates)
     transfer_eligible <- intersect(outcome_a, outcome_b)
+    if (is.list(transfer_eligible)) {
+      transfer_eligible <- unlist(transfer_eligible)
+    }
+    transfer_eligible <- as.character(transfer_eligible)
     
     # Eliminate candidates in neither outcome
     votes <- ballots %>% select(all_of(relevant_candidates))
