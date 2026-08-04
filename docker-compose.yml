@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  shiny:
+    build: .
+    ports:
+      - "3838:3838"
+    environment:
+      - SHINY_PORT=3838
+      - SHINY_HOST=0.0.0.0
+    volumes:
+      - ./Elections:/srv/shiny-server/Elections
+      - ./Sample\ Data:/srv/shiny-server/Sample\ Data:ro
+    restart: unless-stopped
