@@ -1,0 +1,57 @@
+---
+title: "Introduction to CPO-STV"
+author: "Zenon Sommers"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Introduction to CPO-STV}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## What is CPO-STV?
+
+CPO-STV (Condorcet Post-Combinatorial Sequential-Tally Voting) is a multi-winner ranked choice voting method that combines:
+
+1. **Sequential Tallying** — Candidates are eliminated one at a time, similar to traditional STV.
+2. **Post-Combinatorial Processing** — When ties or incomplete transfers occur, the system considers all remaining candidates pairwise to break ties using Borda counts, standard STV, or CPO-STV itself.
+
+## How It Works
+
+The algorithm reads ranked ballots and produces a ranked list of winners. The number of seats is configurable.
+
+## Tiebreakers
+
+Tiebreakers are ordered by preference:
+
+| Method | Description |
+|--------|-------------|
+| `Borda` | Highest Borda score wins |
+| `Random` | Random draw |
+| `STV` | Standard STV elimination |
+| `CPO-STV` | CPO-STV itself |
+
+## Usage
+
+```R
+library(voter)
+
+# Load your ballot data
+ballots <- read.csv("ballots.csv")
+
+# Run CPO-STV
+result <- cpo_stv(
+  ballot_df = ballots,
+  seats = 3,
+  ties = c("Borda", "Random"),
+  seed = 38725,
+  verbose = FALSE
+)
+```

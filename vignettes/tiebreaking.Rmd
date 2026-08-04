@@ -1,0 +1,41 @@
+---
+title: "Tiebreaker Methods"
+author: "Zenon Sommers"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Tiebreaking Methods}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>"
+)
+```
+
+## Tiebreaker Methods
+
+When the CPO-STV algorithm reaches a tie situation, it applies tiebreakers in order. Each method has different properties.
+
+### Borda Count
+
+The Borda count assigns points based on rank positions. A first-place vote gives `n-1` points, second place `n-2`, etc. The candidate with the most total points wins.
+
+### Random
+
+A random draw using the configured seed. Reproducible but arbitrary.
+
+### STV
+
+Standard Sequential-Tally Voting elimination — eliminates the lowest-ranked candidate and redistributes.
+
+### CPO-STV
+
+Uses the CPO-STV algorithm itself as a tiebreaker. This can create nested elections but is the most principled choice.
+
+## Ordering Matters
+
+The order of tiebreakers in your rank list determines which method is tried first. For most elections, placing `Borda` first and `Random` last is recommended.

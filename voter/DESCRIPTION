@@ -1,0 +1,26 @@
+Package: voter
+Type: Package
+Title: RCBC Election Engine
+Version: 0.0.0.9000
+Authors@R:
+    person("Zenon", "Sommers", email = "zenon@hermes.local",
+           role = c("aut", "cre"))
+Description: Implements election algorithms including CPO-STV, Borda count,
+    and STV voting methods with configurable tiebreakers.
+License: MIT + file LICENSE
+Encoding: UTF-8
+LazyData: true
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 0.0.0.9000
+Imports:
+    tibble,
+    dplyr,
+    vote,
+    digest,
+    rlang
+Suggests:
+    testthat (>= 3.0.0)
+Config:
+    testthat:
+      version: 3
+    NeedsCompilation: no
