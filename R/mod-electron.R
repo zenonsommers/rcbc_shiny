@@ -3,11 +3,12 @@
 #
 # Centralizes all reactive state for the app. Follows the "electron" pattern
 # from Shiny module best practices — one source of truth for shared state.
+# State is defined at the top level so all modules can access it.
 # ==============================================================================
 
-# ==============================================================================
-# State Definitions (exported for use by modules)
-# ==============================================================================
+# =============================================================================
+# State Definitions
+# =============================================================================
 
 # UI state
 current_ui <- reactiveVal("hub")       # Current page: hub, create, ballot, process, edit, end
@@ -31,9 +32,9 @@ tabulation_method <- reactiveVal("cpo_stv") # Selected method
 # Last function choice (for hub radio button)
 last_function_choice <- reactiveVal("create")
 
-# ==============================================================================
+# =============================================================================
 # Helper Functions
-# ==============================================================================
+# =============================================================================
 
 # Load election config from disk
 # @param id election ID string
