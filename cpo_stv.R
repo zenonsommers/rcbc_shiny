@@ -73,10 +73,19 @@ removeQuestion <- function(df) {
   
   # now actually remove both LCS, then return the updated dataframe
   # <-- CHANGE: Escape special regex characters in the found strings
-  colnames(df) <- cols %>%
-    str_replace(stringr::str_escape(LCS1), "") %>%
-    str_replace(stringr::str_escape(LCS2), "") %>%
-    str_trim() # Use str_trim for a cleaner result than replacing periods
+  
+  # Only remove substrings if they were actually found (non-empty)
+  new_names <- cols
+  if (nzchar(LCS1)) {
+    # Remove the common prefix (anchored at start with ^)
+    new_names <- str_replace(new_names, paste0("^", stringr::str_escape(LCS1)), "")
+  }
+  if (nzchar(LCS2)) {
+    # Remove the common suffix (anchored at end with $)
+    new_names <- str_replace(new_names, paste0(stringr::str_escape(LCS2), "$"), "")
+  }
+  
+  colnames(df) <- str_trim(new_names) # Use str_trim for a cleaner result than replacing periods
   
   return(df)
 }
