@@ -47,6 +47,13 @@ if (!dir.exists("Elections")) {
   dir.create("Elections")
 }
 
+# Election IDs are used directly as directory names, so only allow a safe
+# character set (no slashes, dots, or other path components).
+is_valid_election_id <- function(id) {
+  is.character(id) && length(id) == 1 &&
+    grepl("^[a-z0-9][a-z0-9_-]{0,63}$", id)
+}
+
 # Helper function for showing error pop-ups
 show_error_modal <- function(message) {
   modalDialog(
@@ -326,7 +333,8 @@ server <- function(input, output, session) {
       p(paste("Election ID:", config$unique_identifier)),
       hr(),
       strong("Candidates in this Election:"),
-      p(HTML(paste(config$candidates, collapse = "<br>"))),
+      p(HTML(paste(htmltools::htmlEscape(config$candidates),
+                   collapse = "<br>"))),
       textOutput("ballot_count_p1"),
       tags$details(
         tags$summary("View Recorded Ballots"),
@@ -371,7 +379,8 @@ server <- function(input, output, session) {
       p(paste("Tabulation method:", method_name)),
       hr(),
       strong("Candidates in this Election:"),
-      p(HTML(paste(config$candidates, collapse = "<br>"))),
+      p(HTML(paste(htmltools::htmlEscape(config$candidates),
+                   collapse = "<br>"))),
       textOutput("ballot_count_p2"),
       tags$details(
         tags$summary("View Recorded Ballots"),
@@ -636,7 +645,7 @@ server <- function(input, output, session) {
     
     
     lapply(candidates, function(cand) {
-      output_name <- paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand))
+      output_name <- paste0("plot_", match(cand, candidates))
       
       output[[output_name]] <- renderPlot({
         current_ballot_df <- ballot_data_reactive()
@@ -703,7 +712,7 @@ server <- function(input, output, session) {
       plot_width <- max(200, num_candidates * 25 + 60)
       
       plot_output_list <- lapply(candidates, function(cand) {
-        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+        plotOutput(paste0("plot_", match(cand, candidates)),
                    height = "250px", width = paste0(plot_width, "px"))
       })
       div(style="display: flex; flex-wrap: wrap; gap: 10px;",
@@ -717,7 +726,7 @@ server <- function(input, output, session) {
       plot_width <- max(200, num_candidates * 25 + 60)
       
       plot_output_list <- lapply(candidates, function(cand) {
-        plotOutput(paste0("plot_", gsub("\\s+|[^A-Za-z0-9]", "_", cand)),
+        plotOutput(paste0("plot_", match(cand, candidates)),
                    height = "250px", width = paste0(plot_width, "px"))
       })
       div(style="display: flex; flex-wrap: wrap; gap: 10px;",
@@ -782,6 +791,17 @@ server <- function(input, output, session) {
       showModal(show_error_modal("Election ID cannot be empty."))
       return()
     }
+
+    # The ID becomes a directory name under Elections/, so restrict it to a
+    # safe character set to prevent path traversal (e.g. "../../etc").
+    if (!is_valid_election_id(id)) {
+      showModal(show_error_modal(paste(
+        "Election IDs may only contain lowercase letters, numbers, hyphens,",
+        "and underscores, must start with a letter or number, and be at most",
+        "64 characters long."
+      )))
+      return()
+    }
     
     # Set the 'last_known_id' immediately, so we can return to it.
     last_known_id(id) 
@@ -830,7 +850,7 @@ server <- function(input, output, session) {
       active_election_id(id) # Set active ID only on successful load
       
       if (input$app_function == "edit") {
-        if (config$password_hash == "") {
+        if (is.null(config$password_hash) || config$password_hash == "") {
           editing_page(2)
         } else {
           editing_page(1)
@@ -892,60 +912,102 @@ server <- function(input, output, session) {
       showModal(show_error_modal("Please specify at least three candidates."))
       return()
     }
-    if (input$seats >= length(candidates)) {
+    if (any(duplicated(candidates))) {
+      showModal(show_error_modal(paste(
+        "Each candidate name must be unique. Duplicated:",
+        paste(unique(candidates[duplicated(candidates)]), collapse = ", ")
+      )))
+      return()
+    }
+    seats <- input$seats
+    if (is.null(seats) || is.na(seats) || seats < 1 || seats != round(seats)) {
+      showModal(show_error_modal(
+        "The number of seats must be a whole number of at least 1."
+      ))
+      return()
+    }
+    if (seats >= length(candidates)) {
       showModal(show_error_modal(
         "The number of seats must be less than the number of candidates."
       ))
       return()
     }
+
+    # Parse and validate any uploaded CSV *before* touching the filesystem, so
+    # a bad file can't leave a half-created election or a false success screen.
+    csv_ballots <- NULL
+    if (!is.null(input$ballot_file)) {
+      csv_ballots <- tryCatch({
+        ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
+        processed_df <- ballot_df %>% select(where(is.numeric)) %>%
+          removeQuestion()
+        csv_candidates <- colnames(processed_df)
+        if (!identical(candidates, csv_candidates)) {
+          if (setequal(candidates, csv_candidates)) {
+            processed_df <- processed_df[, candidates, drop = FALSE]
+          } else {
+            stop("Candidate list derived from CSV does not match final list.")
+          }
+        }
+        processed_df
+      }, error = function(e) {
+        showModal(show_error_modal(
+          paste("Error processing CSV for ballot creation:", e$message)
+        ))
+        NULL
+      })
+      if (is.null(csv_ballots)) return()
+    }
+
     election_path <- file.path("Elections", active_election_id())
-    dir.create(election_path)
+    # dir.create() returns FALSE if the directory already exists, which also
+    # guards against two people creating the same ID at the same moment.
+    if (!dir.create(election_path, showWarnings = FALSE)) {
+      showModal(show_error_modal(
+        "An election with this ID already exists. Please choose another."
+      ))
+      return()
+    }
+
+    title <- trimws(input$election_title)
+    if (title == "") title <- active_election_id()
+
     config <- list(
       unique_identifier = active_election_id(),
-      title = input$election_title, candidates = candidates,
-      seats = input$seats, allow_incomplete = input$allow_incomplete,
+      title = title, candidates = candidates,
+      seats = seats, allow_incomplete = input$allow_incomplete,
       allow_ties = input$allow_ties,
       password_hash = if (input$password != "") {
         digest::digest(input$password, "sha256")
       } else { "" },
       accepting_responses = TRUE
     )
-    write_json(config, file.path(election_path, "config.json"),
-               auto_unbox = TRUE, pretty = TRUE)
-    if (!is.null(input$ballot_file)) {
-      tryCatch({
-        ballot_df <- read.csv(input$ballot_file$datapath, check.names = FALSE)
-        processed_df <- ballot_df %>% select(where(is.numeric)) %>%
-          removeQuestion()
-        csv_candidates <- colnames(processed_df)
-        if(!identical(candidates, csv_candidates)){
-          if(setequal(candidates, csv_candidates)){
-            processed_df <- processed_df[, candidates]
-            warning("CSV columns reordered to match candidate list.")
-          } else {
-            stop("Candidate list derived from CSV does not match final list.")
-          }
-        }
-        
-        for (i in 1:nrow(processed_df)) {
-          ballot_data <- setNames(as.list(processed_df[i, ]), candidates)
+
+    created_ok <- tryCatch({
+      write_json(config, file.path(election_path, "config.json"),
+                 auto_unbox = TRUE, pretty = TRUE)
+      if (!is.null(csv_ballots)) {
+        for (i in seq_len(nrow(csv_ballots))) {
+          ballot_data <- setNames(as.list(csv_ballots[i, ]), candidates)
           ballot_data <- lapply(ballot_data,
-                                function(x) if(is.numeric(x)) x else NA)
+                                function(x) if (is.numeric(x)) x else NA)
           ballot_filename <- paste0("ballot_", UUIDgenerate(), ".json")
           write_json(ballot_data,
                      file.path(election_path, ballot_filename),
                      auto_unbox = TRUE, na = "null")
         }
-      }, error = function(e) {
-        unlink(election_path, recursive = TRUE)
-        showModal(show_error_modal(
-          paste("Error processing CSV for ballot creation:", e$message)
-        ))
-        return()
-      })
-    }
-    end_screen_message(paste("Successfully created election:",
-                             input$election_title))
+      }
+      TRUE
+    }, error = function(e) {
+      unlink(election_path, recursive = TRUE)
+      showModal(show_error_modal(
+        paste("Error saving the new election:", e$message)
+      ))
+      FALSE
+    })
+    if (!created_ok) return()
+
+    end_screen_message(paste("Successfully created election:", title))
     current_ui("end")
   })
   
@@ -968,10 +1030,11 @@ server <- function(input, output, session) {
       initial_ballot_order(NULL)
       max_rank <- length(config$candidates)
       ranks <- 1:max_rank
-      lapply(randomized_candidates, function(cand) {
-        sanitized_name <- gsub("\\s+|[^A-Za-z0-9]", "_", cand)
+      # Key inputs by the candidate's index in the config (not a sanitized
+      # name), so names like "A B" and "A_B" can't collide.
+      lapply(sample(seq_along(config$candidates)), function(i) {
         selectInput(
-          inputId = paste0("rank_", sanitized_name), label = cand,
+          inputId = paste0("rank_", i), label = config$candidates[[i]],
           choices = c("Unranked" = 0, ranks), selected = 0
         )
       })
@@ -994,10 +1057,10 @@ server <- function(input, output, session) {
     if (!config$allow_incomplete && !config$allow_ties) {
       ranks <- match(config$candidates, input$ranked_ballot_strict)
     } else {
-      ranks <- sapply(config$candidates, function(cand) {
-        sanitized_name <- gsub("\\s+|[^A-Za-z0-9]", "_", cand)
-        as.numeric(input[[paste0("rank_", sanitized_name)]])
-      })
+      ranks <- vapply(seq_along(config$candidates), function(i) {
+        val <- input[[paste0("rank_", i)]]
+        if (is.null(val)) NA_real_ else as.numeric(val)
+      }, numeric(1))
     }
     if (!config$allow_incomplete && any(ranks == 0 | is.na(ranks))) {
       showModal(show_error_modal("Please rank all candidates."))
@@ -1204,7 +1267,17 @@ server <- function(input, output, session) {
       })
       return()
     }
-    
+
+    if (tabulation_method() != "borda") {
+      ps <- input$process_seats
+      if (is.null(ps) || is.na(ps) || ps < 1 || ps != round(ps)) {
+        output$text_results <- renderPrint({
+          cat("Number of seats must be a whole number of at least 1.")
+        })
+        return()
+      }
+    }
+
     returned_value <- NULL
     printed_output <- NULL
     
@@ -1218,11 +1291,14 @@ server <- function(input, output, session) {
       verbose_flag <- input$verbose_output
       
       current_seed <- if(method == "borda") default_seed else input$seed
-      if(is.na(current_seed) || is.null(current_seed)){
+      if (is.null(current_seed) || is.na(current_seed)) {
         current_seed <- default_seed
       }
-      
-      returned_value <- if (method == "cpo_stv") {
+
+      # All sessions share one R process, so the tabulation's set.seed() calls
+      # would otherwise reset the global RNG and make every user's "random"
+      # ballot order predictable. with_seed() restores the RNG state afterwards.
+      returned_value <- withr::with_seed(current_seed, if (method == "cpo_stv") {
         cpo_stv(ballot_df, seats = input$process_seats,
                 ties = input$tiebreak_methods_cpo, seed = current_seed,
                 verbose = verbose_flag)
@@ -1239,8 +1315,8 @@ server <- function(input, output, session) {
         stv(ballot_df, nseats = input$process_seats,
             seed = current_seed, verbose = verbose_flag,
             equal.ranking = config$allow_ties)
-      }
-      
+      })
+
       # Close connections
       sink(type = "message"); sink(type = "output")
       close(output_con)
