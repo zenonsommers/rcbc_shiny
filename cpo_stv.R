@@ -389,9 +389,12 @@ break_tie <- function(df, seats, guaranteed = c(), tied, ties, ...) {
   # right now, anything not recognizable will be interpreted as "random"
   method <- ties[1]
   ties <- ties[-1]
-  # Filter out parameters that stv() doesn't accept
+  # Filter out parameters that stv() doesn't accept. stv() forwards its `...`
+  # to an internal check that errors on unknown arguments (e.g. `debug`), so
+  # only pass through arguments that are named in stv()'s own signature.
   stv_args <- list(...)
-  stv_args <- stv_args[names(stv_args) %in% c("quiet", "seed", "verbose", "debug", "debug_mode")]
+  stv_formals <- setdiff(names(formals(vote::stv)), "...")
+  stv_args <- stv_args[names(stv_args) %in% stv_formals]
   
   if (method == "stv") {
     # Run stv

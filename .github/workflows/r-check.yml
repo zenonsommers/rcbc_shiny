@@ -14,7 +14,7 @@ env:
 
 jobs:
   source-check:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
 
     steps:
@@ -38,9 +38,9 @@ jobs:
         id: renv-cache
         with:
           path: ~/.cache/R/renv
-          key: ${{ runner.os }}-renv-${{ hashFiles('**/renv.lock') }}
+          key: ${{ runner.os }}-ubuntu-24.04-renv-${{ hashFiles('**/renv.lock') }}
           restore-keys: |
-            ${{ runner.os }}-renv-
+            ${{ runner.os }}-ubuntu-24.04-renv-
 
       - name: Restore packages
         run: |
